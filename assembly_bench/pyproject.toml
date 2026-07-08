@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "assembly-bench"
+version = "0.1.0"
+description = "NIST-taskboard assembly benchmark on Isaac Lab Arena"
+requires-python = ">=3.10"
+# isaaclab_arena is installed separately from submodules/IsaacLab-Arena (see README).
+
+# This directory is itself the `assembly_bench` package (docs-style layout with
+# pyproject.toml inside the package folder), hence the explicit mapping.
+[tool.setuptools]
+packages = [
+    "assembly_bench",
+    "assembly_bench.environments",
+    "assembly_bench.environments.assembly",
+]
+
+[tool.setuptools.package-dir]
+assembly_bench = "."
+
+[tool.setuptools.package-data]
+assembly_bench = ["assets/parts/*.usd", "assets/backgrounds/indoors/*.hdr"]
