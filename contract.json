@@ -1,0 +1,92 @@
+{
+  "control_rate": 15,
+  "features": {
+    "camera_obs/front_cam_rgb": {
+      "role": "observation",
+      "type": "rgb"
+    },
+    "camera_obs/wrist_camera_rgb": {
+      "role": "observation",
+      "type": "rgb"
+    },
+    "policy/actions": {
+      "role": "observation",
+      "names": [
+        "actions_0",
+        "actions_1",
+        "actions_2",
+        "actions_3",
+        "actions_4",
+        "actions_5",
+        "actions_6",
+        "actions_7"
+      ]
+    },
+    "policy/robot_joint_pos": {
+      "role": "observation",
+      "names": [
+        "robot_joint_pos_0",
+        "robot_joint_pos_1",
+        "robot_joint_pos_2",
+        "robot_joint_pos_3",
+        "robot_joint_pos_4",
+        "robot_joint_pos_5",
+        "robot_joint_pos_6",
+        "robot_joint_pos_7",
+        "robot_joint_pos_8",
+        "robot_joint_pos_9",
+        "robot_joint_pos_10",
+        "robot_joint_pos_11",
+        "robot_joint_pos_12"
+      ]
+    },
+    "policy/joint_pos": {
+      "role": "observation",
+      "names": [
+        "joint_pos_0",
+        "joint_pos_1",
+        "joint_pos_2",
+        "joint_pos_3",
+        "joint_pos_4",
+        "joint_pos_5",
+        "joint_pos_6"
+      ]
+    },
+    "policy/gripper_pos": {
+      "role": "observation",
+      "names": [
+        "gripper_pos_0"
+      ]
+    },
+    "policy/eef_pos": {
+      "role": "observation",
+      "names": [
+        "eef_pos_0",
+        "eef_pos_1",
+        "eef_pos_2"
+      ]
+    },
+    "policy/eef_quat": {
+      "role": "observation",
+      "names": [
+        "eef_quat_0",
+        "eef_quat_1",
+        "eef_quat_2",
+        "eef_quat_3"
+      ]
+    },
+    "action": {
+      "role": "action",
+      "names": [
+        "act_0",
+        "act_1",
+        "act_2",
+        "act_3",
+        "act_4",
+        "act_5",
+        "act_6",
+        "act_7"
+      ]
+    }
+  }
+}
