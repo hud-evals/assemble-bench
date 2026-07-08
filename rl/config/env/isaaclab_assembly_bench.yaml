@@ -1,0 +1,28 @@
+# assembly_bench (Arena) peg env for RLinf isaaclab training.
+# Mirrors examples/embodiment/config/env/isaaclab_stack_cube.yaml; the wrapper
+# (IsaaclabAssemblyBenchEnv) reads init_params.{id,task,num_envs}.
+env_type: isaaclab
+total_num_envs: null
+auto_reset: False
+ignore_terminations: False
+use_rel_reward: False
+seed: 0
+group_size: 1
+
+reward_coef: 1.0
+use_fixed_reset_state_ids: False
+max_steps_per_rollout_epoch: 480
+max_episode_steps: 480   # 32 s at 15 Hz control (peg variant episode length)
+
+video_cfg:
+  save_video: False
+  info_on_video: True
+  fps: 15
+  video_base_dir: ${runner.logger.log_path}/video/train
+
+init_params:
+  id: "AssemblyBench-Peg-v0"           # RLinf lookup key (REGISTER_ISAACLAB_ENVS)
+  task: "peg_round_8mm_tight"          # assembly_bench variant (make_assembly_env)
+  num_envs: null
+  max_episode_steps: ${..max_episode_steps}
+  task_description: "pick up the 8 mm round peg and insert it into the hole"
