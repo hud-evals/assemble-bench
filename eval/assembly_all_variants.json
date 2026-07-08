@@ -1,0 +1,323 @@
+{
+    "jobs": [
+        {
+            "name": "peg_round_4mm_loose",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "peg_round_4mm_loose",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "peg_round_4mm_tight",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "peg_round_4mm_tight",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "peg_square_4mm_loose",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "peg_square_4mm_loose",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "peg_square_4mm_tight",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "peg_square_4mm_tight",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "peg_round_8mm_loose",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "peg_round_8mm_loose",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "peg_round_8mm_tight",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "peg_round_8mm_tight",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "peg_square_8mm_loose",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "peg_square_8mm_loose",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "peg_square_8mm_tight",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "peg_square_8mm_tight",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "peg_round_12mm_loose",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "peg_round_12mm_loose",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "peg_round_12mm_tight",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "peg_round_12mm_tight",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "peg_square_12mm_loose",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "peg_square_12mm_loose",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "peg_square_12mm_tight",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "peg_square_12mm_tight",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "peg_round_16mm_loose",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "peg_round_16mm_loose",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "peg_round_16mm_tight",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "peg_round_16mm_tight",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "peg_square_16mm_loose",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "peg_square_16mm_loose",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "peg_square_16mm_tight",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "peg_square_16mm_tight",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "gear_small",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "gear_small",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "gear_medium",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "gear_medium",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "gear_large",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "gear_large",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "nut_m4_loose",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "nut_m4_loose",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "nut_m4_tight",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "nut_m4_tight",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "nut_m8_loose",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "nut_m8_loose",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "nut_m8_tight",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "nut_m8_tight",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "nut_m12_loose",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "nut_m12_loose",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "nut_m12_tight",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "nut_m12_tight",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "nut_m16_loose",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "nut_m16_loose",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "nut_m16_tight",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "nut_m16_tight",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "nut_m20_loose",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "nut_m20_loose",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        },
+        {
+            "name": "nut_m20_tight",
+            "arena_env_args": {
+                "environment": "assembly_bench",
+                "task": "nut_m20_tight",
+                "embodiment": "droid_abs_joint_pos"
+            },
+            "num_episodes": 1,
+            "policy_type": "zero_action",
+            "policy_config_dict": {}
+        }
+    ]
+}
