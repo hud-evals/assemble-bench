@@ -1,0 +1,86 @@
+"""Benchmark cameras: the embodiment's own wrist camera + one frontal exterior.
+
+The DROID embodiment already ships the right cameras (calibrated Robotiq wrist
+mount, DROID-native 1280x720, 16:9 DROID intrinsics), so this module keeps
+them untouched and only swaps the two over-shoulder exterior views for a
+single frontal one. Frames stream at native 16:9 -- model-input sizing
+(openpi's ``resize_with_pad`` to 224x224) is the policy adapter's job, exactly
+as in the chess bench's pi0.5 eval.
+"""
+
+import numpy as np
+
+import isaaclab.sim as sim_utils
+from isaaclab.sensors import CameraCfg
+
+from isaaclab_arena.utils.configclass import make_configclass
+
+# DROID-native render + intrinsics (2.8 mm focal, 5.376 x 3.024 mm aperture,
+# ~88 x 57 deg FOV), matching Arena's DroidCameraCfg.
+RENDER_W, RENDER_H = 1280, 720
+_SPAWN = dict(focal_length=2.8, focus_distance=28.0,
+              horizontal_aperture=5.376, vertical_aperture=3.024,
+              clipping_range=(0.01, 6.0))
+
+# Frontal exterior view (LIBERO agentview convention): close in front of the
+# workspace on the robot midline, low enough that the parts read as 3D shapes,
+# with the arm entering from the far side. (Framing picked from a rendered
+# candidate sweep; see scripts/preview_assembly.py to re-render.)
+FRONT_CAM_EYE = (0.55, 0.0, 0.30)
+FRONT_CAM_TARGET = (0.37, 0.0, 0.03)
+
+
+def lookat_opengl_quat_xyzw(eye, target, up=(0.0, 0.0, 1.0)):
+    """Quaternion (x,y,z,w) aiming an OpenGL/USD-convention camera (looks down
+    local -Z, +Y up) from ``eye`` to ``target``. Baked into the OffsetCfg: it is
+    per-env-relative, so one offset works for all envs."""
+    eye, target, up = (np.asarray(v, dtype=float) for v in (eye, target, up))
+    f = target - eye
+    f /= np.linalg.norm(f)                        # forward (view dir); camera -Z
+    r = np.cross(f, up)
+    r /= np.linalg.norm(r)                        # right; camera +X
+    u = np.cross(r, f)                            # true up; camera +Y
+    R = np.column_stack([r, u, -f])               # camera->world basis
+    t = np.trace(R)
+    if t > 0:
+        s = np.sqrt(t + 1.0) * 2
+        w, x, y, z = 0.25 * s, (R[2, 1] - R[1, 2]) / s, (R[0, 2] - R[2, 0]) / s, (R[1, 0] - R[0, 1]) / s
+    else:
+        i = int(np.argmax(np.diag(R)))
+        j, k = (i + 1) % 3, (i + 2) % 3
+        s = np.sqrt(1.0 + R[i, i] - R[j, j] - R[k, k]) * 2
+        q = [0.0, 0.0, 0.0]
+        w = (R[k, j] - R[j, k]) / s
+        q[i] = 0.25 * s
+        q[j] = (R[j, i] + R[i, j]) / s
+        q[k] = (R[k, i] + R[i, k]) / s
+        x, y, z = q
+    return (float(x), float(y), float(z), float(w))
+
+
+def front_camera(eye=FRONT_CAM_EYE, target=FRONT_CAM_TARGET, name="front_cam") -> CameraCfg:
+    """The fixed frontal exterior camera (DROID-native 16:9)."""
+    return CameraCfg(
+        prim_path="{ENV_REGEX_NS}/" + name,
+        offset=CameraCfg.OffsetCfg(
+            pos=eye, rot=lookat_opengl_quat_xyzw(eye, target), convention="opengl"),
+        update_period=0.0,
+        height=RENDER_H,
+        width=RENDER_W,
+        data_types=["rgb"],
+        spawn=sim_utils.PinholeCameraCfg(**_SPAWN),
+    )
+
+
+def make_assembly_camera_cfg(embodiment):
+    """The embodiment's camera config with its exterior views replaced by
+    ``front_cam``. Wrist cameras pass through verbatim (for DROID that is the
+    calibrated Robotiq mount at 1280x720 -- verified frame-for-frame against
+    the source benchmark's recorded demos)."""
+    fields = []
+    for name in getattr(embodiment.camera_config, "__dataclass_fields__", {}):
+        cam = getattr(embodiment.camera_config, name)
+        if isinstance(cam, CameraCfg) and "wrist" in name:
+            fields.append((name, CameraCfg, cam))
+    fields.append(("front_cam", CameraCfg, front_camera()))
+    return make_configclass("AssemblyCameraCfg", fields)()

@@ -1,0 +1,116 @@
+"""Arena-registered assets for the NIST assembly benchmark.
+
+Registers every part the variants reference, under an ``asm_`` prefix so the
+names never collide with Arena's own library. Local USDs ship in
+``assembly_bench/assets/parts`` (generated, physics-validated: watertight SDF
+bores, calibrated frames); the M16 nut/bolt and the gear base come from the
+Isaac Lab Factory asset dir, exactly as in the source benchmark.
+
+Asset roles mirror the source env:
+  held  -- free dynamic part (gravity on), grasped and assembled.
+  fixed -- world-pinned socket / base / bolt (the curated/generated USDs carry
+           their own fixed joint, so spawning them as articulations pins them).
+  extras / board -- kinematic context and mesh partners (flanking gears, NIST board).
+"""
+
+from pathlib import Path
+
+import isaaclab.sim as sim_utils
+from isaaclab.assets import ArticulationCfg
+from isaaclab_tasks.direct.factory.factory_tasks_cfg import ASSET_DIR
+
+from isaaclab_arena.assets.hdr_image_library import LibraryHDR
+from isaaclab_arena.assets.object_base import ObjectType
+from isaaclab_arena.assets.object_library import LibraryObject
+from isaaclab_arena.assets.object_utils import RIGID_BODY_PROPS_HIGH_PRECISION
+from isaaclab_arena.assets.register import register_asset, register_hdr
+
+ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
+PARTS_DIR = ASSETS_DIR / "parts"
+
+
+@register_hdr
+class MachineShopHDR(LibraryHDR):
+    """The source benchmark's machine-shop backdrop (Poly Haven CC0), shipped locally."""
+
+    name = "asm_machine_shop"
+    tags = ["indoor", "workshop"]
+    texture_file = str(ASSETS_DIR / "backgrounds" / "indoors" / "machine_shop_01_2k.hdr")
+
+# Empty-joint init state for DOF-less articulations (the {".*": 0.0} default
+# fails to match when the articulation has no joints).
+_EMPTY_INIT = ArticulationCfg.InitialStateCfg(joint_pos={}, joint_vel={})
+
+# Contact-impulse cap for gear/nut assets: a mis-phased tooth clash or the
+# nut's fine-thread SDF bore can otherwise generate an unbounded impulse ->
+# NaN blow-up. 1e4 pushes apart gently (~4 orders above real contact forces).
+GEAR_NUT_IMPULSE_CAP = 1e4
+
+GEAR_MASS = {"small": 0.006, "medium": 0.012, "large": 0.025}
+
+
+def _register(name: str, usd: str, *, mass: float | None = None, impulse_cap: float = 1e32,
+              kinematic: bool = False) -> None:
+    """Register one part. Free/pinned parts spawn as DOF-less articulations
+    (the NIST USDs carry articulation roots); ``kinematic`` disables the
+    articulation root and spawns an immovable rigid body instead."""
+    spawn: dict = {
+        "mass_props": sim_utils.MassPropertiesCfg(mass=mass) if mass is not None else None,
+        "collision_props": sim_utils.CollisionPropertiesCfg(contact_offset=0.005, rest_offset=0.0),
+    }
+    if kinematic:
+        spawn["rigid_props"] = sim_utils.RigidBodyPropertiesCfg(
+            kinematic_enabled=True, disable_gravity=True, max_depenetration_velocity=5.0,
+            solver_position_iteration_count=192, solver_velocity_iteration_count=1,
+            max_contact_impulse=impulse_cap)
+        spawn["articulation_props"] = sim_utils.ArticulationRootPropertiesCfg(articulation_enabled=False)
+        object_type, asset_addon = ObjectType.RIGID, {}
+    else:
+        spawn["rigid_props"] = RIGID_BODY_PROPS_HIGH_PRECISION.replace(max_contact_impulse=impulse_cap)
+        object_type, asset_addon = ObjectType.ARTICULATION, {"init_state": _EMPTY_INIT}
+    register_asset(type(
+        name.title().replace("_", ""),
+        (LibraryObject,),
+        {
+            "name": name,
+            "tags": ["object", "assembly"],
+            "usd_path": usd,
+            "object_type": object_type,
+            "spawn_cfg_addon": spawn,
+            "asset_cfg_addon": asset_addon,
+        },
+    ))
+
+
+# Peg family: 16 pegs (50 mm long, ~1 mm chamfer mouth) + 8 matching bores.
+# The bore doubles as the presentation stand the peg starts standing in.
+for _size in (4, 8, 12, 16):
+    for _stem in ("round", "rect"):
+        for _tol in ("loose", "tight"):
+            _register(f"asm_peg_{_stem}_{_size}mm_{_tol}",
+                      str(PARTS_DIR / f"gen_{_stem}_peg_{_size}mm_{_tol}.usd"), mass=0.019)
+        _register(f"asm_hole_{_stem}_{_size}mm",
+                  str(PARTS_DIR / f"gen_{_stem}_hole_{_size}mm.usd"), mass=0.05)
+
+# Gear family: re-centered gears (frame on the shaft axis) as both the free
+# held part and the kinematic flanking mesh partners; base from Factory.
+for _k, _m in GEAR_MASS.items():
+    _register(f"asm_gear_{_k}", str(PARTS_DIR / f"gen_gear_{_k}.usd"),
+              mass=_m, impulse_cap=GEAR_NUT_IMPULSE_CAP)
+    _register(f"asm_gear_{_k}_fixed", str(PARTS_DIR / f"gen_gear_{_k}.usd"),
+              mass=_m, impulse_cap=GEAR_NUT_IMPULSE_CAP, kinematic=True)
+_register("asm_gear_base", f"{ASSET_DIR}/factory_gear_base.usd",
+          mass=0.05, impulse_cap=GEAR_NUT_IMPULSE_CAP)
+
+# Nut family on the standard NIST GMC task board: generated watertight-
+# threaded M4-M20 tiers with baked brass/steel MDL (mass from the USDs' baked
+# density, 8000 kg/m^3). M16 is generated too, at the curated reference dims
+# (the curated factory pair renders un-metallic).
+for _s in (4, 8, 12, 16, 20):
+    for _t in ("loose", "tight"):
+        _register(f"asm_nut_m{_s}_{_t}", str(PARTS_DIR / f"gen_nut_m{_s}_{_t}.usd"),
+                  impulse_cap=GEAR_NUT_IMPULSE_CAP)
+        _register(f"asm_bolt_m{_s}_{_t}", str(PARTS_DIR / f"gen_bolt_m{_s}_{_t}.usd"),
+                  impulse_cap=GEAR_NUT_IMPULSE_CAP)
+_register("asm_nist_board", str(PARTS_DIR / "nist_gmc_base.usd"),
+          mass=1.0, impulse_cap=GEAR_NUT_IMPULSE_CAP, kinematic=True)
