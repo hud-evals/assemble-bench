@@ -1,26 +1,9 @@
-# Copyright 2026 The RLinf Authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     https://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """RLinf IsaacLab task wrapper for the assembly_bench (Arena) peg env.
 
 The one required extension point that lets RLinf's PPO trainer drive the Arena
 env: it reuses ``assembly_bench``'s own ``make_assembly_env`` factory (turning
 the staged reward on) and repacks Arena's observation into RLinf's contract.
 No task logic here -- that all lives in ``assembly_bench``.
-
-Install into an RLinf checkout with ``rl/install_into_rlinf.sh`` (copies this to
-``rlinf/envs/isaaclab/tasks/`` and registers the id in the package ``__init__``).
 
 Obs mapping (Arena groups -> RLinf keys), grounded in ``contract.json``:
   states       = cat(policy/joint_pos[7], policy/gripper_pos[1])  # pi0.5-DROID proprio
@@ -30,7 +13,7 @@ Obs mapping (Arena groups -> RLinf keys), grounded in ``contract.json``:
 
 import torch
 
-from ..isaaclab_env import IsaaclabBaseEnv
+from ..isaaclab_env import IsaaclabBaseEnv # RLInf base class
 
 
 class IsaaclabAssemblyBenchEnv(IsaaclabBaseEnv):

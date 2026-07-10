@@ -32,6 +32,7 @@ with SimulationAppContext(args_cli):
 
     from experts import peg
     from experts.base import Servo, pos_of
+    from experts.record import Recorder
 
     class SuccessInfo(gym.Wrapper):
         """Surface the ``success`` termination into the step ``info`` dict.
@@ -70,6 +71,12 @@ with SimulationAppContext(args_cli):
     parser.add_argument("--calib_toollen", type=str, default=None, choices=["open", "closed"],
                         help="descend the gripper (open|closed) onto the peg; flange z at "
                              "first contact - peg length = flange->tip length in that state")
+    parser.add_argument("--record", type=str, default=None,
+                        help="write success-filtered episodes to this HDF5 (for LeRobot export)")
+    parser.add_argument("--stream", action="store_true",
+                        help="force HUD trace streaming even during a --record run (default: "
+                             "streaming is ON for interactive runs, OFF for --record so bulk "
+                             "data-gen never stalls on a dead telemetry endpoint)")
     args_cli, _ = parser.parse_known_args()
     args_cli.enable_cameras = True
 
@@ -82,8 +89,11 @@ with SimulationAppContext(args_cli):
         arena_env.embodiment.scene_config.robot.actuators["gripper"].effort_limit_sim = args_cli.grip_effort
         print(f"[expert] gripper effort cap: {args_cli.grip_effort} N*m", flush=True)
     env = ArenaEnvBuilder(arena_env, args_cli).make_registered(render_mode="rgb_array")
-    env = hud.wrap(SuccessInfo(env), job=f"expert-{args_cli.task}", task=variant.instruction,
-                   contract="scripts/experts/contract.json")
+    # Stream for interactive runs; skip it during bulk --record so a dead
+    # telemetry endpoint can't stall generation (retries choke the step loop).
+    if args_cli.stream or not args_cli.record:
+        env = hud.wrap(SuccessInfo(env), job=f"expert-{args_cli.task}", task=variant.instruction,
+                       contract="scripts/experts/contract.json")
     base = env.unwrapped
 
     if args_cli.calib_pregrasp:
@@ -136,6 +146,9 @@ with SimulationAppContext(args_cli):
         env.close()
         raise SystemExit
 
+    recorder = Recorder(base, args_cli.record, args_cli.task, variant.instruction) \
+        if args_cli.record else None
+
     for wave in range(args_cli.waves):
         env.reset()
         servo = Servo(base)
@@ -145,7 +158,11 @@ with SimulationAppContext(args_cli):
             aim_off = torch.zeros((base.num_envs, 3), device=base.device)
             aim_off[:, "xyz".index(ax)] = torch.linspace(
                 float(lo), float(hi), base.num_envs, device=base.device)
-        machine = peg.make_machine(base, servo, aim_off=aim_off)
+        # Rect ("square") pegs get the yaw-clocking servo; the yaw-jittered hole
+        # is exactly the signal (round pegs have rand_fixed_yaw == 0).
+        machine = peg.make_machine(base, servo, aim_off=aim_off,
+                                   seed=(args_cli.seed or 0) + wave,
+                                   clock=variant.rand_fixed_yaw > 0.0)
         done_ever = torch.zeros(base.num_envs, dtype=torch.bool, device=base.device)
         succ_ever = torch.zeros_like(done_ever)
 
@@ -157,6 +174,10 @@ with SimulationAppContext(args_cli):
                               action[:, 7:]], dim=-1)
             action = torch.where(done_ever.unsqueeze(-1), hold, action)
             obs, _, terminated, truncated, _ = env.step(action)
+            succ_now = base.termination_manager.get_term("success")
+            done_now = terminated | truncated
+            if recorder is not None:
+                recorder.step(obs, action, done_now, succ_now)
             if args_cli.debug_env0:
                 from isaaclab.utils.math import quat_apply
                 axis = quat_apply(servo.ee_quat()[:1], torch.tensor(
@@ -170,8 +191,8 @@ with SimulationAppContext(args_cli):
                       f"lim_margin={servo.dbg_lim_margin:.3f} "
                       f"Lpad=({p[li][0]:.4f},{p[li][1]:.4f},{p[li][2]:.4f}) "
                       f"Rpad=({p[ri][0]:.4f},{p[ri][1]:.4f},{p[ri][2]:.4f})", flush=True)
-            succ_ever |= base.termination_manager.get_term("success")
-            done_ever |= terminated | truncated
+            succ_ever |= succ_now
+            done_ever |= done_now
             if args_cli.snap_every and step % args_cli.snap_every == 0:
                 import os as _os
 
@@ -198,7 +219,9 @@ with SimulationAppContext(args_cli):
                       flush=True)
             if bool(done_ever.all()):
                 break
-        print(f"[expert] wave {wave}: seated {int(succ_ever.sum())}/{base.num_envs}", flush=True)
+        kept = recorder.flush() if recorder is not None else 0
+        print(f"[expert] wave {wave}: seated {int(succ_ever.sum())}/{base.num_envs}"
+              f"{f' recorded {kept}' if recorder else ''}", flush=True)
         if aim_off is not None:
             fingers = wp.to_torch(base.scene["robot"].data.joint_pos)[:, 7]
             peg_z = pos_of(base, "held_part")[:, 2]
@@ -209,4 +232,6 @@ with SimulationAppContext(args_cli):
                       f"phase={machine.phases[int(machine.phase[i])].name} "
                       f"failed={bool(machine.failed[i])}", flush=True)
 
+    if recorder is not None:
+        recorder.close()
     env.close()

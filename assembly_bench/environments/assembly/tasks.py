@@ -144,11 +144,18 @@ def settle_and_render(env, env_ids, steps: int = 50) -> None:
     notes/ISSUE_stale_reset_camera_obs.md), and re-converge the RTX temporal
     accumulator -- its TAA/DLSS + denoiser history is invalidated by the
     teleport, and needs ~50 frames before shadows/gloss/texture are fully
-    resolved. Cameras only sample once per STEPPED frame at sensor fetch
+    resolved.     Cameras only sample once per STEPPED frame at sensor fetch
     (render-only calls change nothing), hence step + fetch per iteration.
-    Steps the whole sim, so it assumes benchmark-style global resets."""
+    Steps the whole sim, so it assumes benchmark-style global resets.
+
+    The raw ``sim.step`` bypasses the manager's ``write_data_to_sim``, so the
+    home joint-position TARGET staged by ``reset_scene_to_default`` never
+    reaches PhysX -- the arm teleports home but the stale prior-episode target
+    drags it back off during settle. Re-flush each step so the PD holds home."""
     del env_ids
     for _ in range(steps):
+        for art in env.scene.articulations.values():
+            art.write_data_to_sim()
         env.sim.step(render=True)
         for sensor in env.scene.sensors.values():
             sensor.update(dt=0.0, force_recompute=True)
