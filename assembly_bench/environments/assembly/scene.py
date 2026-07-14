@@ -43,8 +43,11 @@ _EMPTY_INIT = ArticulationCfg.InitialStateCfg(joint_pos={}, joint_vel={})
 
 # Contact-impulse cap for gear/nut assets: a mis-phased tooth clash or the
 # nut's fine-thread SDF bore can otherwise generate an unbounded impulse ->
-# NaN blow-up. 1e4 pushes apart gently (~4 orders above real contact forces).
-GEAR_NUT_IMPULSE_CAP = 1e4
+# NaN blow-up. The cap must still be high enough that a gripper can actually
+# clamp the part: at 1e4 the finger's clamp impulse was clipped and the pad
+# sank through the gear. 1e6 keeps the NaN guard (still bounded, ~6 orders above
+# real contact) while leaving ample headroom for a firm grasp.
+GEAR_NUT_IMPULSE_CAP = 1e6
 
 GEAR_MASS = {"small": 0.006, "medium": 0.012, "large": 0.025}
 
@@ -66,18 +69,18 @@ def _register(name: str, usd: str, *, mass: float | None = None, impulse_cap: fl
         spawn["articulation_props"] = sim_utils.ArticulationRootPropertiesCfg(articulation_enabled=False)
         object_type, asset_addon = ObjectType.RIGID, {}
     else:
-        # Free part. Beyond the contact-impulse cap, bound the escape energy so a
-        # deep SDF interpenetration (e.g. teeth vs the gripper/mesh partner) can't
-        # launch it: cap the depenetration velocity (default 5 m/s teleports the
-        # part in one step) and the max lin/ang velocity, and add light damping so
-        # a spurious impulse decays instead of flinging the part out of the grasp.
+        # Free part. Standard high-precision rigid body (same treatment pegs use
+        # and grasp cleanly with) -- the earlier gear/nut-specific throttle
+        # (capped depenetration velocity, capped lin/ang velocity, extra damping)
+        # was fighting the grasp without curing the pad-into-part sink-in, which
+        # is a contact-offset effect fixed on the robot side (see assembly.py:
+        # robot.spawn.collision_props). Retain only two guards: a bounded contact
+        # impulse (NaN safety on gear-tooth / nut-thread SDF clashes) and velocity
+        # solver iterations raised 1 -> 4 to match the robot so both sides resolve
+        # contact velocity.
         spawn["rigid_props"] = RIGID_BODY_PROPS_HIGH_PRECISION.replace(
             max_contact_impulse=impulse_cap,
-            max_depenetration_velocity=1.0,
-            max_linear_velocity=5.0,
-            max_angular_velocity=50.0,
-            linear_damping=0.05,
-            angular_damping=0.05,
+            solver_velocity_iteration_count=4,
         )
         object_type, asset_addon = ObjectType.ARTICULATION, {"init_state": _EMPTY_INIT}
     register_asset(type(

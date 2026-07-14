@@ -31,6 +31,11 @@ def assembly_bench_env_cfg_callback(env_cfg):
     env_cfg = mdp.assembly_env_cfg_callback(env_cfg)
     env_cfg.decimation = 4
     env_cfg.sim.render_interval = env_cfg.decimation
+    # Contact-velocity iterations: Arena ships max_velocity_iteration_count=1,
+    # which under-resolves contact velocities -- a hard ram into the table then
+    # diverges (joint vels blow to 1e30+). Raise it so TGS actually damps the
+    # contact velocity and ramming stays bounded.
+    env_cfg.sim.physics.max_velocity_iteration_count = 4
     # DLAA instead of the default DLSS: native-resolution temporal AA. DLSS
     # renders low-res and upscales via temporal reprojection, which smears
     # moving/teleported geometry into ghosts and shimmers edges (aliasing).
@@ -91,6 +96,42 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
             # Replace the single `gripper` group with IsaacLab's maintained 2F-85
             # groups: every gripper joint force-bounded, the drive lightly damped.
             robot = embodiment.scene_config.robot
+
+            # Soften the Robotiq mimic coupling. The USD authors it near-rigid and
+            # undamped (naturalFrequency 1e6/1000, dampingRatio 0/0.05); at 60 Hz
+            # that penalty spring is numerically unstable (omega*dt >> 1), so a hard
+            # ram makes the coupling self-amplify and the gripper explodes. Author a
+            # local overlay USD that references the calibrated asset and only
+            # overrides the mimic spring to a stable, critically-damped coupling
+            # (PhysX parses joint params at spawn, so an actuator override can't
+            # reach them -- it must be on the joint prim).
+            import os
+            import tempfile
+
+            from pxr import Sdf, Usd
+
+            _overlay = os.path.join(tempfile.gettempdir(), "droid_softened_mimic.usd")
+            if os.path.exists(_overlay):
+                os.remove(_overlay)
+            _ov = Usd.Stage.CreateNew(_overlay)
+            _root = _ov.OverridePrim("/panda")
+            _root.GetReferences().AddReference(robot.spawn.usd_path)
+            _ov.SetDefaultPrim(_root.GetPrim())
+            for _jp, _axis in (
+                ("right_outer_knuckle_joint", "rotZ"),
+                ("right_inner_finger_joint", "rotX"),
+                ("right_inner_finger_knuckle_joint", "rotX"),
+                ("left_inner_finger_knuckle_joint", "rotX"),
+                ("left_inner_finger_joint", "rotX"),
+            ):
+                _j = _ov.OverridePrim(f"/panda/Gripper/Robotiq_2F_85/Joints/{_jp}")
+                _j.CreateAttribute(
+                    f"physxMimicJoint:{_axis}:naturalFrequency", Sdf.ValueTypeNames.Float).Set(300.0)
+                _j.CreateAttribute(
+                    f"physxMimicJoint:{_axis}:dampingRatio", Sdf.ValueTypeNames.Float).Set(1.0)
+            _ov.GetRootLayer().Save()
+            robot.spawn.usd_path = _overlay
+
             robot.actuators.pop("gripper", None)
             robot.actuators["gripper_drive"] = ImplicitActuatorCfg(
                 joint_names_expr=["finger_joint"],
@@ -106,12 +147,28 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
             # `velocity_limit` is a no-op on implicit actuators, so the arm ran
             # uncapped at the USD's 10 rad/s -- restore the real panda joint-speed
             # limits via velocity_limit_sim; armature (rotor inertia, base-panda
-            # value) damps high-PD jitter under contact; and the depenetration cap
-            # stops a rammed link being launched when PhysX resolves the overlap.
+            # value) damps high-PD jitter under contact. The key stabilizer is the
+            # articulation velocity iterations (0 -> 4): with 0 the solver never
+            # damps contact velocity and a hard ram diverges. Do NOT starve the
+            # robot's contact force (a low max_contact_impulse) or over-cap
+            # depenetration -- that lets the arm tunnel through the fixed blocks.
             robot.spawn.rigid_props.max_depenetration_velocity = 1.0
+            robot.spawn.articulation_props.solver_velocity_iteration_count = 4
             for _name, _vlim in (("panda_shoulder", 2.175), ("panda_forearm", 2.61)):
                 robot.actuators[_name].velocity_limit_sim = _vlim
                 robot.actuators[_name].armature = 1e-3
+
+            # Kill the pad-into-part sink-in at its source. Penalty contact needs
+            # some geometric overlap to build the balancing force, so a clamped
+            # finger visibly buries into the part (worst on the gear hub). A small
+            # positive rest_offset makes the robot's collision shapes rest with a
+            # ~1.5 mm cushion, so the pads stop at the surface instead of sinking;
+            # contact_offset widens the detection band so contact engages before a
+            # fast finger step tunnels. This lives on the ROBOT only -- it changes
+            # grasp contact, never the part-vs-part insertion/mesh/thread fits.
+            robot.spawn.collision_props = sim_utils.CollisionPropertiesCfg(
+                contact_offset=0.01, rest_offset=0.0015
+            )
 
             # Joint velocities alongside joint positions in the policy obs (both
             # land in recorded HDF5s via the flat policy-obs recorder term).
@@ -191,6 +248,13 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
             # translation -- roll/pitch/yaw at high gain make fine alignment jumpy.
             pos_sens = float(os.environ.get("TELEOP_POS_SENS", "0.1"))
             rot_sens = float(os.environ.get("TELEOP_ROT_SENS", "0.08"))
+            # The streamed viewport looks at the workspace from the operator's
+            # side, mirrored vs. the robot base frame, so W/S, A/D and Q/E all
+            # read backwards. All three translation axes scale by pos_sensitivity,
+            # so negating it flips them together (rotation unaffected). Set
+            # TELEOP_INVERT_XLATE=0 to restore the raw base-frame directions.
+            if os.environ.get("TELEOP_INVERT_XLATE", "1") == "1":
+                pos_sens = -pos_sens
             teleop_device = self.device_registry.get_device_by_name(teleop_device_name)(
                 pos_sensitivity=pos_sens, rot_sensitivity=rot_sens
             )
