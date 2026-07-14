@@ -66,7 +66,19 @@ def _register(name: str, usd: str, *, mass: float | None = None, impulse_cap: fl
         spawn["articulation_props"] = sim_utils.ArticulationRootPropertiesCfg(articulation_enabled=False)
         object_type, asset_addon = ObjectType.RIGID, {}
     else:
-        spawn["rigid_props"] = RIGID_BODY_PROPS_HIGH_PRECISION.replace(max_contact_impulse=impulse_cap)
+        # Free part. Beyond the contact-impulse cap, bound the escape energy so a
+        # deep SDF interpenetration (e.g. teeth vs the gripper/mesh partner) can't
+        # launch it: cap the depenetration velocity (default 5 m/s teleports the
+        # part in one step) and the max lin/ang velocity, and add light damping so
+        # a spurious impulse decays instead of flinging the part out of the grasp.
+        spawn["rigid_props"] = RIGID_BODY_PROPS_HIGH_PRECISION.replace(
+            max_contact_impulse=impulse_cap,
+            max_depenetration_velocity=1.0,
+            max_linear_velocity=5.0,
+            max_angular_velocity=50.0,
+            linear_damping=0.05,
+            angular_damping=0.05,
+        )
         object_type, asset_addon = ObjectType.ARTICULATION, {"init_state": _EMPTY_INIT}
     register_asset(type(
         name.title().replace("_", ""),

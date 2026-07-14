@@ -1,7 +1,7 @@
 """NIST assembly benchmark environment for Isaac Lab Arena (externally defined).
 
 A Franka faces the NIST-taskboard workspace on the ``table`` background, with
-one of 29 task variants (peg insert / gear mesh / nut thread)
+one of 27 task variants (peg insert / gear mesh / nut thread)
 selected via ``--task``. Run with, e.g.::
 
     python isaaclab_arena/evaluation/policy_runner.py \\
@@ -43,7 +43,10 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
     name: str = "assembly_bench"
 
     def get_env(self, args_cli: argparse.Namespace):
+        import os
+
         import isaaclab.sim as sim_utils
+        import torch
 
         from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
         from isaaclab_arena.scene.scene import Scene
@@ -72,6 +75,68 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
         embodiment = self.asset_registry.get_asset_by_name(args_cli.embodiment)(
             enable_cameras=args_cli.enable_cameras,
         )
+        if args_cli.embodiment.startswith("droid"):
+            # Keep Arena's calibrated DROID asset (franka_robotiq_2f_85_flattened.usd):
+            # its wrist camera is mounted frame-for-frame against the source demos.
+            from isaaclab.actuators import ImplicitActuatorCfg
+            from isaaclab.managers import ObservationTermCfg as ObsTerm
+
+            from assembly_bench.environments.assembly.observations import arm_joint_vel
+
+            # Retune the Robotiq 2F-85 drives. The DROID USD authors the finger
+            # drive in DEGREES, so Isaac reads a near-rigid, undamped spring
+            # (~5730 stiffness / ~0.01 damping in rad) and leaves the 5 coupled
+            # mimic joints unmanaged at maxForce=inf -- a jam (e.g. ramming the
+            # table) then injects unbounded force and the gripper/arm explode.
+            # Replace the single `gripper` group with IsaacLab's maintained 2F-85
+            # groups: every gripper joint force-bounded, the drive lightly damped.
+            robot = embodiment.scene_config.robot
+            robot.actuators.pop("gripper", None)
+            robot.actuators["gripper_drive"] = ImplicitActuatorCfg(
+                joint_names_expr=["finger_joint"],
+                effort_limit_sim=1650.0, velocity_limit_sim=10.0, stiffness=17.0, damping=0.02)
+            robot.actuators["gripper_finger"] = ImplicitActuatorCfg(
+                joint_names_expr=[".*_inner_finger_joint"],
+                effort_limit_sim=50.0, velocity_limit_sim=10.0, stiffness=0.2, damping=0.001)
+            robot.actuators["gripper_passive"] = ImplicitActuatorCfg(
+                joint_names_expr=[".*_inner_finger_knuckle_joint", "right_outer_knuckle_joint"],
+                effort_limit_sim=1.0, velocity_limit_sim=10.0, stiffness=0.0, damping=0.0)
+
+            # Durability: make ramming the table stall instead of explode.
+            # `velocity_limit` is a no-op on implicit actuators, so the arm ran
+            # uncapped at the USD's 10 rad/s -- restore the real panda joint-speed
+            # limits via velocity_limit_sim; armature (rotor inertia, base-panda
+            # value) damps high-PD jitter under contact; and the depenetration cap
+            # stops a rammed link being launched when PhysX resolves the overlap.
+            robot.spawn.rigid_props.max_depenetration_velocity = 1.0
+            for _name, _vlim in (("panda_shoulder", 2.175), ("panda_forearm", 2.61)):
+                robot.actuators[_name].velocity_limit_sim = _vlim
+                robot.actuators[_name].armature = 1e-3
+
+            # Joint velocities alongside joint positions in the policy obs (both
+            # land in recorded HDF5s via the flat policy-obs recorder term).
+            embodiment.observation_config.policy.joint_vel = ObsTerm(func=arm_joint_vel)
+        if args_cli.embodiment == "droid_differential_ik":
+            # Teleop embodiment fixes (Arena's DIK cfg is untested for DROID):
+            # - body_name: upstream says "panda_link0" (the ARM BASE -- fixed-base
+            #   jacobian indexing then wraps to the last body; the arm can't servo).
+            #   Control the Robotiq "base_link" instead: same frame the eef_pos/
+            #   eef_quat observations and the scripted expert's IK servo use.
+            # - gripper: Se3Keyboard emits +1 open / -1 close; the ZeroToOne term
+            #   (>0.5 = close) inverts that. Use the stock binary term (<0 = close),
+            #   which matches the keyboard. NOTE: raw DIK gripper actions are thus
+            #   +/-1, not the canonical 0/1 -- the canonical label stream is the
+            #   recorded `abs_joint_action` (see recorders.py), which is derived
+            #   from processed joint targets and convention-independent.
+            from isaaclab.envs.mdp.actions.actions_cfg import BinaryJointPositionActionCfg
+
+            embodiment.action_config.arm_action.body_name = "base_link"
+            embodiment.action_config.gripper_action = BinaryJointPositionActionCfg(
+                asset_name="robot",
+                joint_names=["finger_joint"],
+                open_command_expr={"finger_joint": 0.0},
+                close_command_expr={"finger_joint": torch.pi / 4},
+            )
         if "franka" in args_cli.embodiment:
             # The Factory-tuned high-PD arm the Arena assembly examples use.
             embodiment.scene_config.robot = mdp.FRANKA_PANDA_ASSEMBLY_HIGH_PD_CFG.replace(
@@ -107,11 +172,35 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
         task = NISTAssemblyTask(variant=variant, held=held, fixed=fixed, stand=stand, extras=extras,
                                 reward_mode=getattr(args_cli, "reward", None))
 
+        # Optional teleoperation (demo collection). Only the differential-IK
+        # embodiment can consume SE(3) devices; a keyboard cannot emit absolute
+        # joint targets, so fail loudly instead of moving nothing.
+        teleop_device = None
+        teleop_device_name = getattr(args_cli, "teleop_device", None)
+        if teleop_device_name is not None:
+            if args_cli.embodiment != "droid_differential_ik":
+                raise ValueError(
+                    f"--teleop_device {teleop_device_name} requires --embodiment droid_differential_ik "
+                    f"(got {args_cli.embodiment}): SE(3) teleop devices cannot drive absolute joint-position "
+                    "actions."
+                )
+            # Arena's registry builds the device with a low default sensitivity
+            # (0.05) and ignores teleop.py's --sensitivity flag. Raise it here so
+            # each keypress moves the arm more per step; override per session with
+            # TELEOP_POS_SENS / TELEOP_ROT_SENS. Keep rotation a touch lower than
+            # translation -- roll/pitch/yaw at high gain make fine alignment jumpy.
+            pos_sens = float(os.environ.get("TELEOP_POS_SENS", "0.1"))
+            rot_sens = float(os.environ.get("TELEOP_ROT_SENS", "0.08"))
+            teleop_device = self.device_registry.get_device_by_name(teleop_device_name)(
+                pos_sensitivity=pos_sens, rot_sensitivity=rot_sens
+            )
+
         return IsaacLabArenaEnvironment(
             name=self.name,
             embodiment=embodiment,
             scene=scene,
             task=task,
+            teleop_device=teleop_device,
             env_cfg_callback=assembly_bench_env_cfg_callback,
         )
 
@@ -128,6 +217,12 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
         # "staged" enables the RL shaping reward (rewards.py); default "none"
         # keeps the env reward-free for eval.
         parser.add_argument("--reward", type=str, default="none", choices=["none", "staged"])
+        # Teleop demo collection (Arena teleop.py / record_demos.py read this).
+        # Requires --embodiment droid_differential_ik; default None keeps eval/
+        # training paths teleop-free (no retargeter exists for abs joint pos).
+        parser.add_argument("--teleop_device", type=str, default=None, choices=["keyboard", "spacemouse"],
+                            help="SE(3) teleop device for demo collection "
+                                 "(requires --embodiment droid_differential_ik)")
 
 
 def make_assembly_env(
@@ -146,7 +241,10 @@ def make_assembly_env(
     width -- one build serves N lockstep slots.
     """
     import carb
-    from isaaclab_arena.cli.isaaclab_arena_cli import get_isaaclab_arena_cli_parser
+    from isaaclab_arena.cli.isaaclab_arena_cli import (
+        arena_env_builder_cfg_from_argparse,
+        get_isaaclab_arena_cli_parser,
+    )
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
 
     # Rebuild guard: env construction calls rep.set_global_seed(cfg.seed), which
@@ -162,4 +260,5 @@ def make_assembly_env(
     args.num_envs = num_envs
     args.reward = reward
     arena_env = AssemblyBenchEnvironment().get_env(args)
-    return ArenaEnvBuilder(arena_env, args).make_registered(render_mode="rgb_array")
+    builder_cfg = arena_env_builder_cfg_from_argparse(args)
+    return ArenaEnvBuilder(arena_env, builder_cfg).make_registered(render_mode="rgb_array")
