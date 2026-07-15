@@ -1,5 +1,6 @@
 __pycache__/
 *.egg-info/
 submodules/
+.venv/
 # NvStreamer WebRTC trace logs (written to CWD by the livestream stack)
 *.etli
