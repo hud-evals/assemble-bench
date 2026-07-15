@@ -21,15 +21,6 @@ args_cli, _ = parser.parse_known_args()
 args_cli.enable_cameras = True
 
 with SimulationAppContext(args_cli):
-    # Disable RTX geometry streaming BEFORE the scene loads: with
-    # readTransformsFromFabricInRenderDelegate it holds stale transforms for
-    # teleported parts (kit warns "dynamic objects not streaming correctly"),
-    # so the settle warmup converges DLAA's history on the PRE-reset block
-    # poses -> episode-long ghosts in wave-1+ recordings.
-    import carb
-    carb.settings.get_settings().set_bool(
-        "/app/usdrt/scene_delegate/geometryStreaming/enabled", False)
-
     import gymnasium as gym
     import torch
 
