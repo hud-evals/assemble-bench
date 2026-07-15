@@ -1,11 +1,11 @@
 """Benchmark cameras: the embodiment's own wrist camera + one frontal exterior.
 
 The DROID embodiment already ships the right cameras (calibrated Robotiq wrist
-mount, DROID-native 1280x720, 16:9 DROID intrinsics), so this module keeps
-them untouched and only swaps the two over-shoulder exterior views for a
-single frontal one. Frames stream at native 16:9 -- model-input sizing
-(openpi's ``resize_with_pad`` to 224x224) is the policy adapter's job, exactly
-as in the chess bench's pi0.5 eval.
+mount, 16:9 DROID intrinsics), so this module keeps their pose/intrinsics and
+only swaps the two over-shoulder exterior views for a single frontal one, and
+drops both cameras' render resolution to 640x360 (see RENDER_W/H). Frames stream
+at 16:9 -- model-input sizing (openpi's ``resize_with_pad`` to 224x224) is the
+policy adapter's job, exactly as in the chess bench's pi0.5 eval.
 """
 
 import numpy as np
@@ -15,9 +15,12 @@ from isaaclab.sensors import CameraCfg
 
 from isaaclab_arena.utils.configclass import make_configclass
 
-# DROID-native render + intrinsics (2.8 mm focal, 5.376 x 3.024 mm aperture,
-# ~88 x 57 deg FOV), matching Arena's DroidCameraCfg.
-RENDER_W, RENDER_H = 1280, 720
+# DROID intrinsics (2.8 mm focal, 5.376 x 3.024 mm aperture, ~88 x 57 deg FOV),
+# matching Arena's DroidCameraCfg. RENDER res is 640x360 (half the DROID-native
+# 1280x720, same 16:9 FOV/intrinsics -- only pixel count changes): we store
+# 320x180 (DROID-RLDS) so rendering 1280x720 was 16x wasteful and the cameras
+# are the per-step cost. Recorder area-downscales 640x360 -> 320x180 (clean 2x).
+RENDER_W, RENDER_H = 640, 360
 _SPAWN = dict(focal_length=2.8, focus_distance=28.0,
               horizontal_aperture=5.376, vertical_aperture=3.024,
               clipping_range=(0.01, 6.0))
@@ -74,13 +77,16 @@ def front_camera(eye=FRONT_CAM_EYE, target=FRONT_CAM_TARGET, name="front_cam") -
 
 def make_assembly_camera_cfg(embodiment):
     """The embodiment's camera config with its exterior views replaced by
-    ``front_cam``. Wrist cameras pass through verbatim (for DROID that is the
-    calibrated Robotiq mount at 1280x720 -- verified frame-for-frame against
-    the source benchmark's recorded demos)."""
+    ``front_cam``. Wrist cameras keep the calibrated Robotiq mount pose/intrinsics
+    (verified frame-for-frame against the source benchmark's demos) but their
+    render resolution is dropped to match the front cam (RENDER_W/H)."""
     fields = []
     for name in getattr(embodiment.camera_config, "__dataclass_fields__", {}):
         cam = getattr(embodiment.camera_config, name)
         if isinstance(cam, CameraCfg) and "wrist" in name:
+            # Match the front cam's render res (same FOV, fewer pixels): the
+            # calibrated mount/intrinsics are unchanged, only resolution drops.
+            cam.height, cam.width = RENDER_H, RENDER_W
             fields.append((name, CameraCfg, cam))
     fields.append(("front_cam", CameraCfg, front_camera()))
     return make_configclass("AssemblyCameraCfg", fields)()

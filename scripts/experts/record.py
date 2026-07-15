@@ -17,8 +17,9 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-# DROID-native cameras render 1280x720; store the DROID-RLDS 320x180 (exact 1/4,
-# 16:9 preserved). Model-agnostic: each VLA resizes/pads from here itself.
+# Store the DROID-RLDS 320x180 (16:9), model-agnostic: each VLA resizes/pads
+# from here itself. Cameras render 640x360 (see cameras.py) -> clean 2x area
+# downscale; the downscale also anti-aliases residual RTX grain.
 IMG_H, IMG_W = 180, 320
 
 
