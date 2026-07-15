@@ -296,28 +296,6 @@
             "num_episodes": 1,
             "policy_type": "zero_action",
             "policy_config_dict": {}
-        },
-        {
-            "name": "nut_m20_loose",
-            "arena_env_args": {
-                "environment": "assembly_bench",
-                "task": "nut_m20_loose",
-                "embodiment": "droid_abs_joint_pos"
-            },
-            "num_episodes": 1,
-            "policy_type": "zero_action",
-            "policy_config_dict": {}
-        },
-        {
-            "name": "nut_m20_tight",
-            "arena_env_args": {
-                "environment": "assembly_bench",
-                "task": "nut_m20_tight",
-                "embodiment": "droid_abs_joint_pos"
-            },
-            "num_episodes": 1,
-            "policy_type": "zero_action",
-            "policy_config_dict": {}
         }
     ]
 }

@@ -15,17 +15,18 @@ stand holding the free part, and the fixture it must be assembled into.
 
 ## Task space
 
-29 variants across 3 families, mirroring the source benchmark's authored task
+27 variants across 3 families, mirroring the source benchmark's authored task
 matrix (`assembly/notes/TASK_MATRIX.md` §2):
 
 | family | variants | goal |
 |---|---|---|
 | `peg_insert` | 16: `peg_{round,square}_{4,8,12,16}mm_{loose,tight}` | pick the peg off its stand bore, insert it into the matching hole |
 | `gear_mesh` | 3: `gear_{small,medium,large}` | mesh the held gear onto its shaft between two fixed gears (tooth-phase alignment) |
-| `nut_thread` | 10: `nut_m{4,8,12,16,20}_{loose,tight}` | thread the nut onto the bolt on the NIST GMC board (helical descent; a straight push jams) |
+| `nut_thread` | 8: `nut_m{4,8,12,16}_{loose,tight}` | thread the nut onto the bolt on the NIST GMC board (helical descent; a straight push jams) |
 
-All nut tiers (M4–M20) use the generated watertight-threaded USDs (real ISO
-helix, SDF collision, baked brass/steel MDL); M16 is authored at the curated
+All active nut tiers (M4–M16) use the generated watertight-threaded USDs (real
+ISO helix, SDF collision, baked brass/steel MDL); the unused M20 assets remain
+packaged, and M16 is authored at the curated
 Factory pair's reference dimensions. Per-tier seat geometry (head height,
 shank, pitch) comes from the authoring tables, so success stays
 FORGE-faithful across sizes.
@@ -45,10 +46,10 @@ assembly_bench/
 │   ├── environments/assembly/
 │   │   ├── scene.py                    @register_asset parts (asm_* prefix)
 │   │   ├── tasks.py                    seat-geometry success + NISTAssemblyTask + reset jitter
-│   │   ├── variants.py                 the 29 variants as pure data (benchmark manifest)
+│   │   ├── variants.py                 the 27 variants as pure data (benchmark manifest)
 │   │   └── assembly.py                 AssemblyBenchEnvironment (ExampleEnvironmentBase)
 │   └── assets/parts/                   generated USDs (pegs, holes, gears, NIST board, YCB)
-├── eval/                               batch eval: jobs config for all 29 variants
+├── eval/                               batch eval: jobs config for all 27 variants
 └── scripts/preview_assembly.py         renders a still + prints part poses
 ```
 
@@ -90,7 +91,7 @@ pi0.5-DROID contract (8-D action: 7 joint targets + binary gripper). Any
 `franka_*` embodiment also works and gets Arena's Factory-tuned high-PD arm
 config. Add
 `--hdr <name>` (any Arena HDR-registry entry, e.g. `carpentry_shop_robolab`)
-to light the scene with an HDRI dome. To run all 29 variants as a batch, see
+to light the scene with an HDRI dome. To run all 27 variants as a batch, see
 [`eval/README.md`](eval/README.md).
 
 ## Design notes (what the port keeps from the source benchmark)

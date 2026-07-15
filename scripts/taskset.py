@@ -6,7 +6,7 @@ never drift from ``variants.py``. Regenerate::
     python taskset.py
 
 The JSON is import-free, so ``hud eval`` can load it from any conda env while
-the sim serves from ``isaac6`` (``--full`` runs all 28 variants)::
+the sim serves from ``isaac6`` (``--full`` runs all 27 variants)::
 
     hud eval assembly_bench/tasks.json inventory/agents/pi05_droid.py \\
         --full --runtime tcp://127.0.0.1:8765

@@ -3,7 +3,7 @@
 Ported from the source benchmark's full authored task matrix
 (``assembly/notes/TASK_MATRIX.md`` §2): the 16-instance peg-insert family
 (round/square x 4/8/12/16 mm x loose/tight), 3 gear-mesh sizes, and the
-10-instance nut-thread family (generated M4-M20 x loose/tight) — 29 variants.
+8-instance nut-thread family (generated M4-M16 x loose/tight) — 27 variants.
 Each variant fully specifies the scene content (held / fixed / stand / extra
 assets and their poses) and the seat geometry that defines success. Kept free
 of Isaac imports so the CLI can list ``--task`` choices before the simulator
@@ -147,6 +147,6 @@ def _nut(size: int, tolerance: str) -> AssemblyVariant:
     )
 
 
-for _size in (4, 8, 12, 16, 20):
+for _size in (4, 8, 12, 16):
     for _tol in ("loose", "tight"):
         VARIANTS[f"nut_m{_size}_{_tol}"] = _nut(_size, _tol)

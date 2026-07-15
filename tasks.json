@@ -65,24 +65,6 @@
   {
     "env": "assembly-bench",
     "id": "assembly",
-    "slug": "nut_m20_loose",
-    "args": {
-      "task": "nut_m20_loose",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "nut_m20_tight",
-    "args": {
-      "task": "nut_m20_tight",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
     "slug": "nut_m4_loose",
     "args": {
       "task": "nut_m4_loose",
