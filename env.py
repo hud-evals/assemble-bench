@@ -26,7 +26,7 @@ from assembly_bench.environments.assembly.assembly import make_assembly_env
 make_env = partial(
     make_assembly_env,
     num_envs=int(os.environ.get("ASSEMBLY_NUM_ENVS", "1")),
-    embodiment=os.environ.get("ASSEMBLY_EMBODIMENT", "droid_abs_joint_pos"),
+    embodiment=os.environ.get("ASSEMBLY_EMBODIMENT", "droid_abs_joint_pos_softmimic"),
     reward=os.environ.get("ASSEMBLY_REWARD", "none"),
 )
 

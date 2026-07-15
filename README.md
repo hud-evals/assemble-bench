@@ -84,12 +84,15 @@ python isaaclab_arena/evaluation/policy_runner.py \
     assembly_bench --task peg_round_8mm_tight
 ```
 
-`--task` selects the variant; `--embodiment` defaults to `droid_abs_joint_pos`
-— Arena's DROID platform (Franka + Robotiq 2F-85 on the DROID stand, wrist
-camera on the Robotiq base link) with absolute joint-position actions, the
-pi0.5-DROID contract (8-D action: 7 joint targets + binary gripper). Any
-`franka_*` embodiment also works and gets Arena's Factory-tuned high-PD arm
-config. Add
+`--task` selects the variant; `--embodiment` defaults to
+`droid_abs_joint_pos_softmimic` — Arena's DROID platform (Franka + Robotiq
+2F-85 on the DROID stand, wrist camera on the Robotiq base link) with absolute
+joint-position actions, the pi0.5-DROID contract (8-D action: 7 joint targets +
+binary gripper), plus the benchmark's contact-stability tuning (softened
+Robotiq mimic overlay + solver/PD headroom; see
+`environments/assembly/embodiments.py`). Pass `--embodiment droid_abs_joint_pos`
+for the untuned stock DROID. Any `franka_*` embodiment also works and gets
+Arena's Factory-tuned high-PD arm config. Add
 `--hdr <name>` (any Arena HDR-registry entry, e.g. `carpentry_shop_robolab`)
 to light the scene with an HDRI dome. To run all 27 variants as a batch, see
 [`eval/README.md`](eval/README.md).
