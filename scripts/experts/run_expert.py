@@ -30,7 +30,7 @@ with SimulationAppContext(args_cli):
     from assembly_bench.environments.assembly.assembly import AssemblyBenchEnvironment
     from assembly_bench.environments.assembly.variants import VARIANTS
 
-    from experts import peg
+    from experts import nut, peg
     from experts.base import Servo, pos_of
     from experts.record import Recorder
 
@@ -53,7 +53,8 @@ with SimulationAppContext(args_cli):
             return obs, rew, term, trunc, info
 
     AssemblyBenchEnvironment.add_cli_args(parser)
-    parser.add_argument("--max_steps", type=int, default=480, help="control steps per wave (32 s)")
+    parser.add_argument("--max_steps", type=int, default=None,
+                        help="control steps per wave (default: task episode length at 15 Hz)")
     parser.add_argument("--waves", type=int, default=1, help="global reset cycles to run")
     parser.add_argument("--snap_every", type=int, default=0,
                         help="save env0 front+wrist frames every N steps to /tmp/expert_snaps")
@@ -81,6 +82,7 @@ with SimulationAppContext(args_cli):
     args_cli.enable_cameras = True
 
     variant = VARIANTS[args_cli.task]
+    max_steps = args_cli.max_steps or round(variant.episode_length_s * 15)
     arena_env = AssemblyBenchEnvironment().get_env(args_cli)
     if args_cli.robot_usd:
         arena_env.embodiment.scene_config.robot.spawn.usd_path = args_cli.robot_usd
@@ -158,15 +160,24 @@ with SimulationAppContext(args_cli):
             aim_off = torch.zeros((base.num_envs, 3), device=base.device)
             aim_off[:, "xyz".index(ax)] = torch.linspace(
                 float(lo), float(hi), base.num_envs, device=base.device)
-        # Rect ("square") pegs get the yaw-clocking servo; the yaw-jittered hole
-        # is exactly the signal (round pegs have rand_fixed_yaw == 0).
-        machine = peg.make_machine(base, servo, aim_off=aim_off,
-                                   seed=(args_cli.seed or 0) + wave,
-                                   clock=variant.rand_fixed_yaw > 0.0)
+        seed = (args_cli.seed or 0) + wave
+        if variant.family == "peg_insert":
+            # Rect pegs get closed-loop yaw clocking; round pegs are symmetric.
+            machine = peg.make_machine(
+                base, servo, aim_off=aim_off, seed=seed,
+                clock=variant.rand_fixed_yaw > 0.0,
+            )
+        elif variant.family == "nut_thread":
+            if aim_off is not None:
+                raise ValueError("--sweep_aim is currently a peg calibration option")
+            size = int(args_cli.task.split("_")[1].removeprefix("m"))
+            machine = nut.make_machine(base, servo, size=size, seed=seed)
+        else:
+            raise NotImplementedError(f"no scripted expert for family {variant.family!r}")
         done_ever = torch.zeros(base.num_envs, dtype=torch.bool, device=base.device)
         succ_ever = torch.zeros_like(done_ever)
 
-        for step in range(args_cli.max_steps):
+        for step in range(max_steps):
             action = machine.action()
             # A finished/terminated env holds its current joints (zero action
             # would command all-zeros joint targets and yank the arm).
