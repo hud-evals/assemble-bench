@@ -1,12 +1,14 @@
 """Convert recorded expert HDF5s into ONE multi-task LeRobot v3.0 dataset.
 
-The ``assembly_joint`` dataset: action = the native DROID 8-D joint-position
+The ``assembly_bench_data`` dataset: action = the native DROID 8-D joint-position
 command (7 absolute arm joint targets + binary gripper) the IK expert emitted;
-state = [joint_pos(7), gripper_pos(1)] -- the exact pi0.5-DROID contract.
-Every recorded variant HDF5 becomes tasks in one dataset, keyed by its
-per-episode instruction. Runs in the ``vla`` env (no Isaac needed).
+state = [joint_pos(7), gripper_pos(1)] -- the exact pi0.5-DROID contract --
+plus joint_vel(7), eef_pos(3, world) and eef_quat(4, world wxyz) as separate
+obs keys; images at DROID-RLDS 320x180. Every recorded variant HDF5 becomes tasks
+in one dataset, keyed by its per-episode instruction. Runs in the ``vla`` env
+(no Isaac needed).
 
-    conda run -n vla python scripts/experts/convert_lerobot.py --push
+    conda run -n vla python scripts/experts/util/convert_lerobot.py --push
 """
 
 import argparse
@@ -21,11 +23,12 @@ os.environ["HF_HUB_DISABLE_XET"] = "1"
 import h5py
 import numpy as np
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # assembly_bench/
+# util/ -> experts/ -> scripts/ -> assembly_bench/
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--glob", default=os.path.join(ROOT, "data", "hdf5", "*.hdf5"))
-parser.add_argument("--repo_id", default="lukasskellijs/assembly_joint")
+parser.add_argument("--repo_id", default="lukasskellijs/assembly_bench_data")
 parser.add_argument("--fps", type=int, default=15)
 parser.add_argument("--crf", type=int, default=20)
 parser.add_argument("--push", action="store_true")
@@ -35,33 +38,24 @@ out_root = os.path.join(ROOT, "data", "lerobot", args.repo_id.split("/")[-1])
 if os.path.exists(out_root):
     shutil.rmtree(out_root)
 
-# LeRobot hardcodes H.264 CRF 30; inject a sharper CRF in both import sites.
-import lerobot.datasets.lerobot_dataset as _lds
-import lerobot.datasets.video_utils as _vu
-
-_orig_encode = _vu.encode_video_frames
-
-
-def _encode_with_crf(*a, crf=args.crf, **k):
-    k.setdefault("crf", crf)
-    return _orig_encode(*a, **k)
-
-
-_vu.encode_video_frames = _encode_with_crf
-_lds.encode_video_frames = _encode_with_crf
-
+from lerobot.configs.video import RGBEncoderConfig
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-H = W = 224
+H, W = 180, 320   # DROID-RLDS resolution (native 1280x720 downscaled 1/4, 16:9)
 features = {
     "observation.images.front": {"dtype": "video", "shape": (H, W, 3), "names": ["height", "width", "channel"]},
     "observation.images.wrist": {"dtype": "video", "shape": (H, W, 3), "names": ["height", "width", "channel"]},
-    "observation.state": {"dtype": "float32", "shape": (8,), "names": None},   # joint(7)+gripper(1)
-    "action": {"dtype": "float32", "shape": (8,), "names": None},              # 7 joint targets + gripper
+    "observation.state": {"dtype": "float32", "shape": (8,), "names": None},      # joint(7)+gripper(1)
+    "observation.joint_vel": {"dtype": "float32", "shape": (7,), "names": None},  # arm joint vel (rad/s)
+    "observation.eef_pos": {"dtype": "float32", "shape": (3,), "names": None},    # world XYZ (m)
+    "observation.eef_quat": {"dtype": "float32", "shape": (4,), "names": None},   # world WXYZ
+    "action": {"dtype": "float32", "shape": (8,), "names": None},                 # 7 joint targets + gripper
 }
 
+# H.264 at a sharper CRF than the AV1 default (lerobot 0.6.0 RGBEncoderConfig).
 ds = LeRobotDataset.create(args.repo_id, fps=args.fps, features=features, root=out_root,
-                           use_videos=True, metadata_buffer_size=1, vcodec="h264")
+                           use_videos=True, metadata_buffer_size=1,
+                           rgb_encoder=RGBEncoderConfig(vcodec="h264", crf=args.crf))
 
 files = sorted(glob.glob(args.glob))
 tasks_written = []
@@ -77,6 +71,9 @@ for hdf5 in files:
         for k in demo_keys:
             o = data[k]["obs"]
             state = o["state"][:].astype(np.float32)
+            joint_vel = o["joint_vel"][:].astype(np.float32)
+            eef_pos = o["eef_pos"][:].astype(np.float32)
+            eef_quat = o["eef_quat"][:].astype(np.float32)
             action = data[k]["action"][:].astype(np.float32)
             wrist, front = o["wrist_rgb"][:], o["front_rgb"][:]
             for t in range(len(state)):
@@ -84,6 +81,9 @@ for hdf5 in files:
                     "observation.images.front": front[t],
                     "observation.images.wrist": wrist[t],
                     "observation.state": state[t],
+                    "observation.joint_vel": joint_vel[t],
+                    "observation.eef_pos": eef_pos[t],
+                    "observation.eef_quat": eef_quat[t],
                     "action": action[t],
                     "task": task,
                 })
@@ -123,7 +123,7 @@ This dataset was created using [LeRobot](https://github.com/huggingface/lerobot)
 <img class="hidden dark:block" src="https://huggingface.co/datasets/huggingface/badges/resolve/main/visualize-this-dataset-dark-xl.svg"/>
 </a>
 
-# assembly_joint
+# assembly_bench_data
 
 Contact-rich **assembly** demonstrations (NIST peg insert) generated by a privileged scripted IK
 expert in NVIDIA Isaac Lab (Arena). Actions are the **native DROID joint-position** command
@@ -143,9 +143,12 @@ expert in NVIDIA Isaac Lab (Arena). Actions are the **native DROID joint-positio
 
 | key | dtype | shape | meaning / units |
 |-----|-------|-------|-----------------|
-| `observation.images.front` | video (H.264, CRF {args.crf}) | (224,224,3) | third-person RGB, uint8 |
-| `observation.images.wrist` | video (H.264, CRF {args.crf}) | (224,224,3) | eye-in-hand RGB, uint8 |
+| `observation.images.front` | video (H.264, CRF {args.crf}) | (180,320,3) | third-person RGB, uint8, DROID-RLDS resolution |
+| `observation.images.wrist` | video (H.264, CRF {args.crf}) | (180,320,3) | eye-in-hand RGB, uint8, DROID-RLDS resolution |
 | `observation.state` | float32 | (8,) | joint_position (7, rad) + gripper_position (1, 0=open 1=closed) |
+| `observation.joint_vel` | float32 | (7,) | arm joint velocities (rad/s, no gripper) |
+| `observation.eef_pos` | float32 | (3,) | end-effector position, world frame (m) |
+| `observation.eef_quat` | float32 | (4,) | end-effector orientation, world frame, **wxyz** |
 | `action` | float32 | (8,) | 7 absolute arm joint-position targets (rad) + gripper (1: 1=close, 0=open) |
 """
 

@@ -3,13 +3,13 @@
 Settles the arm at a tool-down pose over empty table, commands grip 0 then 1,
 and saves full-res front+wrist frames plus pad-frame telemetry for each state.
 The one authoritative answer to 'which command opens the pads, and where are
-the tips'. Run: python scripts/experts/probe_gripper_visual.py --headless
+the tips'. Run: python scripts/experts/util/probe_gripper_visual.py --headless
 """
 
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # scripts/
 
 from isaaclab_arena.cli.isaaclab_arena_cli import get_isaaclab_arena_cli_parser
 from isaaclab_arena.utils.isaaclab_utils.simulation_app import SimulationAppContext

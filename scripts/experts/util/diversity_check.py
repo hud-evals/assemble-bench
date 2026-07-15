@@ -3,7 +3,7 @@
 Computes cross-episode start-state std, episode-length std, and pairwise
 trajectory L2 in joint space. Near-zero values mean a single-template dataset.
 
-    conda run -n vla python scripts/experts/diversity_check.py data/peg_round_8mm_tight.hdf5
+    conda run -n vla python scripts/experts/util/diversity_check.py data/peg_round_8mm_tight.hdf5
 """
 
 import argparse

@@ -6,13 +6,13 @@ collision exists the peg is held/expelled; if it falls straight through, the
 pad collision geometry is absent/misplaced. Also probes 8 lateral offsets to
 map where the channel actually blocks. Run:
 
-    python scripts/experts/probe_pad_collision.py --headless
+    python scripts/experts/util/probe_pad_collision.py --headless
 """
 
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # scripts/
 
 from isaaclab_arena.cli.isaaclab_arena_cli import get_isaaclab_arena_cli_parser
 from isaaclab_arena.utils.isaaclab_utils.simulation_app import SimulationAppContext

@@ -5,7 +5,7 @@ jacobian shape, finger-pad geometry (for the TCP offset), part poses, obs keys,
 and the action spec — so the expert is written against measured reality, not
 assumptions. Run:
 
-    python scripts/experts/probe_robot.py --task peg_round_8mm_tight
+    python scripts/experts/util/probe_robot.py --task peg_round_8mm_tight
 """
 
 from isaaclab_arena.cli.isaaclab_arena_cli import get_isaaclab_arena_cli_parser

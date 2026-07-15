@@ -6,7 +6,7 @@ bounded: no NaN, joint velocities and body displacements within sane limits.
 Prints the worst-case metrics + PASS/FAIL so a physics/solver change can be
 validated without manual teleop.
 
-    python scripts/experts/probe_ram.py --task peg_round_8mm_tight \
+    python scripts/experts/util/probe_ram.py --task peg_round_8mm_tight \
         --embodiment droid_differential_ik --headless
 
 Explosion = NaN, |joint_vel| blowing past the actuator cap, or a body flung far
