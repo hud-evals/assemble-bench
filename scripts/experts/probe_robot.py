@@ -19,6 +19,7 @@ with SimulationAppContext(args_cli):
     import torch
 
     import warp as wp
+    from isaaclab_arena.cli.isaaclab_arena_cli import arena_env_builder_cfg_from_argparse
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
     from assembly_bench.environments.assembly.assembly import AssemblyBenchEnvironment
 
@@ -26,7 +27,8 @@ with SimulationAppContext(args_cli):
     args_cli, _ = parser.parse_known_args()
     args_cli.enable_cameras = True
 
-    env = ArenaEnvBuilder(AssemblyBenchEnvironment().get_env(args_cli), args_cli).make_registered(
+    builder_cfg = arena_env_builder_cfg_from_argparse(args_cli)
+    env = ArenaEnvBuilder(AssemblyBenchEnvironment().get_env(args_cli), builder_cfg).make_registered(
         render_mode="rgb_array")
     obs, _ = env.reset()
     base = env.unwrapped
@@ -47,6 +49,25 @@ with SimulationAppContext(args_cli):
     print(" ", robot.data.body_names)
     print("=== robot joints ===")
     print(" ", robot.data.joint_names)
+
+    print("=== actuator gains (resolved: cfg override or USD-authored fallback) ===")
+    for group_name, actuator in robot.actuators.items():
+        model_type = "implicit" if actuator.is_implicit_model else "explicit"
+        print(f"  [{group_name}] model={model_type} joints={actuator.joint_names}")
+        for jname in actuator.joint_names:
+            j = actuator.joint_names.index(jname)
+            stiffness = float(actuator.stiffness[0, j])
+            damping = float(actuator.damping[0, j])
+            effort_limit = float(actuator.effort_limit[0, j])
+            velocity_limit = float(actuator.velocity_limit[0, j])
+            print(f"    {jname}: stiffness={stiffness:.3f} damping={damping:.3f} "
+                  f"effort_limit={effort_limit:.3f} velocity_limit={velocity_limit:.3f}")
+        # per-parameter resolution table: [joint_name, joint_id, usd_val, cfg_val, applied_val]
+        # only populated for params where cfg was None or diverged from the USD value.
+        for param, rows in actuator.joint_property_resolution_table.items():
+            for jname, jid, usd_val, cfg_val, applied_val in rows:
+                print(f"    resolution[{param}] {jname}[{jid}]: usd={usd_val:.3f} "
+                      f"cfg={cfg_val} applied={applied_val:.3f}")
 
     def body_pose(bname):
         i = robot.data.body_names.index(bname)
