@@ -161,10 +161,24 @@ def settle_and_render(env, env_ids, steps: int = 120, rt_subframes: int = 32) ->
         env.sim.step(render=True)
         for sensor in env.scene.sensors.values():
             sensor.update(dt=0.0, force_recompute=True)
-    # Render-only pump: physics is settled and transforms are final; overwrite
-    # the temporal accumulator of every render product with the NEW scene.
+    # Hard temporal-history reset: DLAA's static-pixel blend is too sticky to
+    # flush by re-rendering alone (120 warmup renders + a 32-frame pump only
+    # FADED teleport ghosts). Toggling the AA mode tears down the accumulation
+    # buffers -- one FXAA frame has no history at all -- then DLAA rebuilds
+    # them from the NEW scene; a short pump re-converges quality before the
+    # first recorded frame. (rep.orchestrator.step is NOT usable here: it
+    # blocks on Replicator's capture pipeline, which this workflow never runs.)
+    import omni.kit.app
     import omni.replicator.core as rep
-    rep.orchestrator.step(rt_subframes=rt_subframes, delta_time=0.0, pause_timeline=True)
+    app = omni.kit.app.get_app()
+    env.sim.set_setting("/app/player/playSimulations", False)
+    rep.settings.set_render_rtx_realtime(antialiasing="FXAA")
+    for _ in range(2):
+        app.update()
+    rep.settings.set_render_rtx_realtime(antialiasing="DLAA")
+    for _ in range(rt_subframes):
+        app.update()
+    env.sim.set_setting("/app/player/playSimulations", True)
     # Refetch so the first post-reset obs reads the pumped, ghost-free frame.
     for sensor in env.scene.sensors.values():
         sensor.update(dt=0.0, force_recompute=True)
