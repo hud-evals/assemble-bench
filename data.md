@@ -113,9 +113,23 @@ and insert it into the hole"); LeRobot dedups identical strings into `total_task
 - **Success measured pre-reset**, episode length exceeds the scripted sequence, and
   per-env randomization (arm start, in-grip pose, part pose+yaw, phase timing).
 
+## Throughput & parallelism (measured)
+
+- **Render resolution is the main lever, not env count.** Recording is dominated by
+  the RTX cameras + the 192-iter contact solver — both scale with env count, so
+  adding envs gives little/no throughput win. Dropping the render 1280x720 -> 640x360
+  (we store 320x180 anyway) is the real speedup and needs no quality revalidation.
+- **`--num_envs 8` is the sweet spot** (on an RTX 6000 Ada, 46 GB): ~9.7 GB, fast
+  steps, 2x demos/wave vs 4. **16 regressed** — at 1280x720 it hung (render/GPU
+  saturation, util->1%); at 640x360 it ran but each step was ~10x slower (many envs
+  pressing pegs at once overwhelms the contact solver), so wall-clock was worse.
+- **Warm caches matter.** First boot ~7 min (cold Warp/PhysX/shader compile); warm
+  boot ~2-4 min. Reuse the same container so caches stay warm; boot is paid once per
+  task, not per wave.
+- **~50 demos come from ONE boot per task** (one process, ~7-15 waves), not a reboot
+  per demo. Re-boots are only the task switches.
+
 ## Env notes
 
 - Conda: record in the container (`/isaac-sim/python.sh`); convert in `vla`.
 - The GPU is the shared resource — one Isaac process at a time (two contend/hang).
-- Recording is **render-bound** (RTX cameras dominate the step), so image resolution,
-  not env count, is the main throughput lever.
