@@ -12,6 +12,7 @@ through ``sim.reset``. Switching task/num_envs needs a new served process.
 """
 
 import os
+from functools import partial
 
 # Isaac must own the process main thread and be up before any isaaclab import.
 from isaaclab.app import AppLauncher
@@ -22,19 +23,19 @@ from hud import Environment
 
 from assembly_bench.environments.assembly.assembly import make_assembly_env
 
-assembly_env = make_assembly_env(
-    task=os.environ.get("ASSEMBLY_TASK", "peg_round_8mm_tight"),
+make_env = partial(
+    make_assembly_env,
     num_envs=int(os.environ.get("ASSEMBLY_NUM_ENVS", "1")),
     embodiment=os.environ.get("ASSEMBLY_EMBODIMENT", "droid_abs_joint_pos"),
     reward=os.environ.get("ASSEMBLY_REWARD", "none"),
 )
 
 env = Environment(name="assembly-bench")
-sim = env.gym(assembly_env)
+sim = env.gym(make_env)
 
 
 @env.template(id="assembly")
-async def assembly(seed: int = 0):
+async def assembly(task: str = "peg_round_8mm_tight", seed: int = 0):
     """One assembly episode on the built scene."""
-    yield {"prompt": await sim.reset(seed=seed)}
+    yield {"prompt": await sim.reset(task=task, seed=seed)}
     yield await sim.result()
