@@ -17,10 +17,11 @@ from .base import Machine, Phase, home_quat, pos_of, quat_of, rolled
 
 OPEN, CLOSE = 0.0, 1.0
 
-# The generated gears share a 25 mm body spanning local z=[5, 30] mm. Aim the
-# fingertip plane into the lower body, not at the top rim, for a level grasp.
-GRASP_ROOT_Z = 0.012
-SAFE_ROOT_Z = 0.075
+# The generated gears share a 25 mm body spanning local z=[5, 30] mm. The
+# small gear needs a slightly higher pinch to clear the table and hold closer
+# to its center of mass; larger gears stay low to avoid catching the top rim.
+GRASP_ROOT_Z = {"small": 0.016, "medium": 0.012, "large": 0.012}
+SAFE_ROOT_Z = 0.065
 ALIGN_GAP = 0.035
 
 # Module-2 gears: pitch radius 10/20/30 mm, hence 10/20/30 teeth. A yaw range
@@ -28,6 +29,7 @@ ALIGN_GAP = 0.035
 GEAR_TEETH = {"small": 10, "medium": 20, "large": 30}
 WIGGLE_PERIOD = 48.0
 PRESS_BIAS = 0.003
+SEAT_PRESS_BIAS = 0.005
 
 
 def make_machine(base, servo, *, size, seat_off, seed=None):
@@ -58,9 +60,9 @@ def make_machine(base, servo, *, size, seat_off, seed=None):
         # The complete pitch search recovers this small approach-yaw variation.
         hold_quat = rolled(hold_quat, u(-0.25 * pitch_half, 0.25 * pitch_half))
         aim_off[:, 0], aim_off[:, 1] = u(-0.001, 0.001), u(-0.001, 0.001)
-        hover_extra = u(0.0, 0.025)
-        safe_root_z += u(-0.008, 0.015)
-        grasp_dwell = u(16.0, 30.0).long()
+        hover_extra = u(0.0, 0.010)
+        safe_root_z += u(-0.005, 0.010)
+        grasp_dwell = u(14.0, 20.0).long()
         wiggle_period = u(42.0, 54.0)
         wiggle_sign = torch.where(u(0.0, 1.0) < 0.5, -1.0, 1.0)
 
@@ -85,7 +87,7 @@ def make_machine(base, servo, *, size, seat_off, seed=None):
         settled = gear_speed() < 0.01
         gear_rest[settled] = gear()[settled]
         p = gear_rest + aim_off
-        p[:, 2] = gear_rest[:, 2] + GRASP_ROOT_Z
+        p[:, 2] = gear_rest[:, 2] + GRASP_ROOT_Z[size]
         return p
 
     def toward(target, m):
@@ -96,7 +98,7 @@ def make_machine(base, servo, *, size, seat_off, seed=None):
 
     def t_hover(m):
         p = grasp_tcp()
-        p[:, 2] += 0.055 + hover_extra
+        p[:, 2] += 0.045 + hover_extra
         return toward(p, m), hold_quat, OPEN
 
     def t_descend(m):
@@ -133,6 +135,13 @@ def make_machine(base, servo, *, size, seat_off, seed=None):
         p[:, 2] = m.servo.ee()[:, 2] + (shaft()[:, 2] + ALIGN_GAP - gear()[:, 2])
         return p, hold_quat, CLOSE
 
+    def t_realign(m):
+        p, q, grip = t_align(m)
+        gap = gear()[:, 2] - shaft()[:, 2]
+        deep = (xy_err(gear(), shaft()) < 0.002) & (gap < 0.003)
+        p[deep] = m.servo.ee()[deep]
+        return p, q, grip
+
     def enter_mesh(m, ids):
         # Freeze the in-hand offset before contact. A live gear-relative target
         # becomes an unreachable moving target as soon as teeth clash.
@@ -145,10 +154,15 @@ def make_machine(base, servo, *, size, seat_off, seed=None):
         aligned = xy_err(gear(), shaft()) < 0.001
         tracking = torch.norm(gear() - (m.servo.ee() + inhand), dim=-1) < 0.012
         gap = gear()[:, 2] - shaft()[:, 2]
-        # Keep a few millimetres of downward position error so the compliant
+        # Keep a small downward position error so the compliant
         # arm develops real preload instead of resetting to a nearly zero-force
         # target every step. The XY/tracking gates still stop an off-axis ram.
-        dz = torch.clamp(-gap, min=-PRESS_BIAS, max=0.0)
+        bias = torch.where(
+            mesh_locked,
+            torch.full_like(gap, SEAT_PRESS_BIAS),
+            torch.full_like(gap, PRESS_BIAS),
+        )
+        dz = -torch.minimum(gap.clamp_min(0.0), bias)
         target[:, 2] = m.servo.ee()[:, 2] + torch.where(
             aligned & tracking, dz, torch.zeros_like(dz)
         )
@@ -157,7 +171,10 @@ def make_machine(base, servo, *, size, seat_off, seed=None):
         # let a bad phase rest on the neighbours until a valley lines up.
         phase = 2.0 * torch.pi * m.timer / wiggle_period
         candidate = wiggle_sign * pitch_half * torch.sin(phase)
-        newly_locked = gap < 0.012
+        # A clashing gear rests around 9-10 mm above the seat, so the old
+        # 12 mm threshold locked the first bad phase and released immediately.
+        # Keep searching until the gear has actually dropped into the mesh.
+        newly_locked = gap < 0.005
         searching = ~mesh_locked & ~newly_locked
         mesh_yaw[searching] = candidate[searching]
         mesh_locked.logical_or_(newly_locked)
@@ -218,26 +235,35 @@ def make_machine(base, servo, *, size, seat_off, seed=None):
             & (gear_speed() < 0.05)
         )
 
-    def engaged(m):
-        gap = gear()[:, 2] - shaft()[:, 2]
-        return (xy_err(gear(), shaft()) < 0.002) & (gap < 0.012)
+    def realigned(m):
+        return seated(m) | aligned(m)
+
+    def confirmed_seated(m):
+        return m.base.termination_manager.get_term("success")
 
     never = lambda m: torch.zeros(N, dtype=torch.bool, device=dev)
 
     return Machine(base, servo, [
-        Phase("hover", t_hover, near(t_hover), timeout=150),
+        Phase("hover", t_hover, near(t_hover), timeout=100),
         # If the open fingers meet the table/gear slightly early, close at the
         # achieved pose instead of forcing the ideal z and ramming the part.
         Phase("descend", t_descend, near(t_descend, 0.009, z_tol=0.003),
-              timeout=100, gate=0.004, zcap=0.35, fail_on_timeout=False),
-        Phase("grasp", t_grasp, grasped, timeout=50, on_enter=enter_grasp,
+              timeout=75, gate=0.004, zcap=0.35, fail_on_timeout=False),
+        Phase("grasp", t_grasp, grasped, timeout=35, on_enter=enter_grasp,
               fail_on_timeout=False),
         Phase("microlift", t_microlift, microlifted, timeout=60, zcap=0.1),
-        Phase("lift", t_lift, lifted, timeout=100, zcap=0.2, on_enter=enter_lift),
+        Phase("lift", t_lift, lifted, timeout=80, zcap=0.2, on_enter=enter_lift),
         Phase("transport", t_transport, lambda m: xy_err(gear(), shaft()) < 0.002,
-              timeout=150),
-        Phase("align", t_align, aligned, timeout=120, zcap=0.3),
-        Phase("mesh", t_mesh, engaged, timeout=420, zcap=0.2, on_enter=enter_mesh),
+              timeout=110),
+        Phase("align", t_align, aligned, timeout=90, zcap=0.3),
+        # A tooth clash can shift the gear inside the grasp. Retry once from
+        # above with a freshly captured in-hand offset instead of pressing a
+        # stale alignment for the rest of the episode.
+        Phase("mesh", t_mesh, confirmed_seated, timeout=220, zcap=0.2,
+              on_enter=enter_mesh, fail_on_timeout=False),
+        Phase("realign", t_realign, realigned, timeout=100, zcap=0.3),
+        Phase("remesh", t_mesh, confirmed_seated, timeout=240, zcap=0.2,
+              on_enter=enter_mesh),
         Phase("release", t_release, lambda m: m.timer >= 12, timeout=20,
               on_enter=enter_release, fail_on_timeout=False),
         Phase("retreat", t_retreat, near(t_retreat), timeout=60, zcap=0.5),
