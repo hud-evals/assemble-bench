@@ -4,8 +4,9 @@ Accumulates the VLA modality per control tick (wrist + front RGB at DROID-RLDS
 320x180, DROID proprio, the 8-D joint action), one buffer per env. On terminate
 (IsaacLab auto-reset), a successful buffer is written immediately and recording
 re-arms for the next episode in the same wave. state = [joint_pos(7),
-gripper_pos(1)] (pi0.5-DROID contract), plus joint_vel(7), eef_pos(3, world XYZ)
-and eef_quat(4, world WXYZ); action = [7 joint targets, gripper]. Consumed by
+gripper_pos(1)] (pi0.5-DROID contract), plus joint_vel(7), eef_pos(3, env-local
+base-frame XYZ) and eef_quat(4, world WXYZ); action = [7 joint targets, gripper].
+Consumed by
 util/convert_lerobot.py (in the ``vla`` env).
 """
 
@@ -77,7 +78,13 @@ class Recorder:
 
         state = np.concatenate([f32("joint_pos"), f32("gripper_pos")], axis=1)  # (N,8)
         joint_vel = f32("joint_vel")                                            # (N,7)
-        eef_pos, eef_quat = f32("eef_pos"), f32("eef_quat")   # world XYZ / WXYZ
+        # ee_pos is body_pos_w (raw world), so with N parallel envs on a grid it
+        # carries the per-env origin offset (~+-15 m). Subtract env_origins to
+        # store it env-local -- i.e. relative to the robot base at the origin,
+        # the DROID "eef pose in base frame" convention, and consistent with
+        # every other env-local quantity. Orientation is offset-invariant.
+        eef_pos = (pol["eef_pos"] - self.base.scene.env_origins).cpu().numpy().astype(np.float32)
+        eef_quat = f32("eef_quat")                            # world WXYZ (frame-invariant)
         act = action.detach().cpu().numpy().astype(np.float32)
         done = done.cpu().numpy()
         success = success.cpu().numpy()

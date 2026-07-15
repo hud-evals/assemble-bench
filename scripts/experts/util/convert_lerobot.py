@@ -3,7 +3,7 @@
 The ``assembly_bench_data`` dataset: action = the native DROID 8-D joint-position
 command (7 absolute arm joint targets + binary gripper) the IK expert emitted;
 state = [joint_pos(7), gripper_pos(1)] -- the exact pi0.5-DROID contract --
-plus joint_vel(7), eef_pos(3, world) and eef_quat(4, world wxyz) as separate
+plus joint_vel(7), eef_pos(3, base frame) and eef_quat(4, world wxyz) as separate
 obs keys; images at DROID-RLDS 320x180. Every recorded variant HDF5 becomes tasks
 in one dataset, keyed by its per-episode instruction. Runs in the ``vla`` env
 (no Isaac needed).
@@ -47,7 +47,7 @@ features = {
     "observation.images.wrist": {"dtype": "video", "shape": (H, W, 3), "names": ["height", "width", "channel"]},
     "observation.state": {"dtype": "float32", "shape": (8,), "names": None},      # joint(7)+gripper(1)
     "observation.joint_vel": {"dtype": "float32", "shape": (7,), "names": None},  # arm joint vel (rad/s)
-    "observation.eef_pos": {"dtype": "float32", "shape": (3,), "names": None},    # world XYZ (m)
+    "observation.eef_pos": {"dtype": "float32", "shape": (3,), "names": None},    # base-frame XYZ (m)
     "observation.eef_quat": {"dtype": "float32", "shape": (4,), "names": None},   # world WXYZ
     "action": {"dtype": "float32", "shape": (8,), "names": None},                 # 7 joint targets + gripper
 }
@@ -147,7 +147,7 @@ expert in NVIDIA Isaac Lab (Arena). Actions are the **native DROID joint-positio
 | `observation.images.wrist` | video (H.264, CRF {args.crf}) | (180,320,3) | eye-in-hand RGB, uint8, DROID-RLDS resolution |
 | `observation.state` | float32 | (8,) | joint_position (7, rad) + gripper_position (1, 0=open 1=closed) |
 | `observation.joint_vel` | float32 | (7,) | arm joint velocities (rad/s, no gripper) |
-| `observation.eef_pos` | float32 | (3,) | end-effector position, world frame (m) |
+| `observation.eef_pos` | float32 | (3,) | end-effector position, robot base frame (m) |
 | `observation.eef_quat` | float32 | (4,) | end-effector orientation, world frame, **wxyz** |
 | `action` | float32 | (8,) | 7 absolute arm joint-position targets (rad) + gripper (1: 1=close, 0=open) |
 """
