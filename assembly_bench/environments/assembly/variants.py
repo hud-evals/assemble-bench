@@ -90,7 +90,8 @@ def _gear(size: str) -> AssemblyVariant:
         fixed_pos=PEG_FIXED_POS,
         extras=flanks,
         seat_off=(GEAR_SHAFT[size], 0.0, 0.0),  # the held gear's own shaft
-        held_friction=0.4,
+        held_friction=1.0,          # grippy pads so the gear cannot slip out of the grasp
+                                    # (was 0.4 -- too low, the gear slid through the fingers)
         engage_gap=0.02,
         partial_socket_h=0.02,
         episode_length_s=52.0,

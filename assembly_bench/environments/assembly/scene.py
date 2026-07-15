@@ -45,9 +45,10 @@ _EMPTY_INIT = ArticulationCfg.InitialStateCfg(joint_pos={}, joint_vel={})
 # nut's fine-thread SDF bore can otherwise generate an unbounded impulse ->
 # NaN blow-up. The cap must still be high enough that a gripper can actually
 # clamp the part: at 1e4 the finger's clamp impulse was clipped and the pad
-# sank through the gear. 1e6 keeps the NaN guard (still bounded, ~6 orders above
-# real contact) while leaving ample headroom for a firm grasp.
-GEAR_NUT_IMPULSE_CAP = 1e6
+# sank through the gear. A low cap can only make sink-through worse, so keep it
+# high (1e16) -- still finite, so the NaN guard survives a runaway SDF clash,
+# but with ample headroom so a firm clamp is never clipped into the part.
+GEAR_NUT_IMPULSE_CAP = 1e16
 
 GEAR_MASS = {"small": 0.006, "medium": 0.012, "large": 0.025}
 
@@ -72,15 +73,14 @@ def _register(name: str, usd: str, *, mass: float | None = None, impulse_cap: fl
         # Free part. Standard high-precision rigid body (same treatment pegs use
         # and grasp cleanly with) -- the earlier gear/nut-specific throttle
         # (capped depenetration velocity, capped lin/ang velocity, extra damping)
-        # was fighting the grasp without curing the pad-into-part sink-in, which
-        # is a contact-offset effect fixed on the robot side (see assembly.py:
-        # robot.spawn.collision_props). Retain only two guards: a bounded contact
-        # impulse (NaN safety on gear-tooth / nut-thread SDF clashes) and velocity
-        # solver iterations raised 1 -> 4 to match the robot so both sides resolve
-        # contact velocity.
+        # was fighting the grasp, so it was dropped. Retain only two guards: a
+        # bounded contact impulse (NaN safety on gear-tooth / nut-thread SDF
+        # clashes) and velocity solver iterations raised 1 -> 8 to match the robot
+        # so both sides resolve contact velocity (more iterations only sharpen
+        # contact, never worsen it).
         spawn["rigid_props"] = RIGID_BODY_PROPS_HIGH_PRECISION.replace(
             max_contact_impulse=impulse_cap,
-            solver_velocity_iteration_count=4,
+            solver_velocity_iteration_count=8,
         )
         object_type, asset_addon = ObjectType.ARTICULATION, {"init_state": _EMPTY_INIT}
     register_asset(type(

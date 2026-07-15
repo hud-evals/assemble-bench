@@ -31,6 +31,12 @@ def assembly_bench_env_cfg_callback(env_cfg):
     env_cfg = mdp.assembly_env_cfg_callback(env_cfg)
     env_cfg.decimation = 4
     env_cfg.sim.render_interval = env_cfg.decimation
+    # Grasp reliability: "max" friction combine takes the higher of the two
+    # contacting materials' coefficients, so the grippy part (held_friction up to
+    # 1.0) governs the pad contact regardless of the pad material -- the Isaac Lab
+    # consensus fix for objects slipping out of a grasp (default "average" dilutes
+    # a high part friction against a low pad friction).
+    env_cfg.sim.physics_material.friction_combine_mode = "max"
     # Contact-velocity iterations: Arena ships max_velocity_iteration_count=1,
     # which under-resolves contact velocities -- a hard ram into the table then
     # diverges (joint vels blow to 1e30+). Raise it so TGS actually damps the
@@ -83,18 +89,18 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
         if args_cli.embodiment.startswith("droid"):
             # Keep Arena's calibrated DROID asset (franka_robotiq_2f_85_flattened.usd):
             # its wrist camera is mounted frame-for-frame against the source demos.
-            from isaaclab.actuators import ImplicitActuatorCfg
             from isaaclab.managers import ObservationTermCfg as ObsTerm
 
             from assembly_bench.environments.assembly.observations import arm_joint_vel
 
-            # Retune the Robotiq 2F-85 drives. The DROID USD authors the finger
-            # drive in DEGREES, so Isaac reads a near-rigid, undamped spring
-            # (~5730 stiffness / ~0.01 damping in rad) and leaves the 5 coupled
-            # mimic joints unmanaged at maxForce=inf -- a jam (e.g. ramming the
-            # table) then injects unbounded force and the gripper/arm explode.
-            # Replace the single `gripper` group with IsaacLab's maintained 2F-85
-            # groups: every gripper joint force-bounded, the drive lightly damped.
+            # Keep the DROID USD's native firm finger drive (the Arena "gripper"
+            # actuator: stiffness/damping = None -> USD-authored gains). It is
+            # stiff, so the pad stops firmly at the part surface; the earlier soft
+            # retune (stiffness 17) let the finger creep into the grasped part --
+            # the collision regression. Explosion safety comes from the softened
+            # mimic overlay below (the mimic coupling, not the finger drive, was
+            # the divergence root cause per probe_ram), so the firm drive can stay
+            # without reintroducing the blow-up.
             robot = embodiment.scene_config.robot
 
             # Soften the Robotiq mimic coupling. The USD authors it near-rigid and
@@ -102,9 +108,13 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
             # that penalty spring is numerically unstable (omega*dt >> 1), so a hard
             # ram makes the coupling self-amplify and the gripper explodes. Author a
             # local overlay USD that references the calibrated asset and only
-            # overrides the mimic spring to a stable, critically-damped coupling
-            # (PhysX parses joint params at spawn, so an actuator override can't
-            # reach them -- it must be on the joint prim).
+            # overrides the mimic spring to a stiff, well-damped coupling
+            # (naturalFrequency 1000, dampingRatio 0.7). 1000 diverged natively at
+            # 64 solver iters; it holds now that solver_position_iteration_count is
+            # raised to 192 (below), which gives the penalty spring the headroom to
+            # carry this stiffness -- verify with probe_ram. PhysX parses joint
+            # params at spawn, so an actuator override can't reach them -- it must
+            # be on the joint prim.
             import os
             import tempfile
 
@@ -126,49 +136,50 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
             ):
                 _j = _ov.OverridePrim(f"/panda/Gripper/Robotiq_2F_85/Joints/{_jp}")
                 _j.CreateAttribute(
-                    f"physxMimicJoint:{_axis}:naturalFrequency", Sdf.ValueTypeNames.Float).Set(300.0)
+                    f"physxMimicJoint:{_axis}:naturalFrequency", Sdf.ValueTypeNames.Float).Set(1000.0)
                 _j.CreateAttribute(
-                    f"physxMimicJoint:{_axis}:dampingRatio", Sdf.ValueTypeNames.Float).Set(1.0)
+                    f"physxMimicJoint:{_axis}:dampingRatio", Sdf.ValueTypeNames.Float).Set(0.7)
             _ov.GetRootLayer().Save()
             robot.spawn.usd_path = _overlay
 
-            robot.actuators.pop("gripper", None)
-            robot.actuators["gripper_drive"] = ImplicitActuatorCfg(
-                joint_names_expr=["finger_joint"],
-                effort_limit_sim=1650.0, velocity_limit_sim=10.0, stiffness=17.0, damping=0.02)
-            robot.actuators["gripper_finger"] = ImplicitActuatorCfg(
-                joint_names_expr=[".*_inner_finger_joint"],
-                effort_limit_sim=50.0, velocity_limit_sim=10.0, stiffness=0.2, damping=0.001)
-            robot.actuators["gripper_passive"] = ImplicitActuatorCfg(
-                joint_names_expr=[".*_inner_finger_knuckle_joint", "right_outer_knuckle_joint"],
-                effort_limit_sim=1.0, velocity_limit_sim=10.0, stiffness=0.0, damping=0.0)
+            # Native "gripper" actuator (firm finger drive) kept as-is -- no retune.
 
             # Durability: make ramming the table stall instead of explode.
             # `velocity_limit` is a no-op on implicit actuators, so the arm ran
             # uncapped at the USD's 10 rad/s -- restore the real panda joint-speed
             # limits via velocity_limit_sim; armature (rotor inertia, base-panda
             # value) damps high-PD jitter under contact. The key stabilizer is the
-            # articulation velocity iterations (0 -> 4): with 0 the solver never
-            # damps contact velocity and a hard ram diverges. Do NOT starve the
+            # articulation velocity iterations (0 -> 8): with 0 the solver never
+            # damps contact velocity and a hard ram diverges; more iterations only
+            # sharpen contact resolution, so keep them high. Do NOT starve the
             # robot's contact force (a low max_contact_impulse) or over-cap
             # depenetration -- that lets the arm tunnel through the fixed blocks.
-            robot.spawn.rigid_props.max_depenetration_velocity = 1.0
-            robot.spawn.articulation_props.solver_velocity_iteration_count = 4
+            robot.spawn.rigid_props.max_depenetration_velocity = 5.0
+            robot.spawn.articulation_props.solver_velocity_iteration_count = 8
+            # Mimic-coupling stability headroom: a physxMimicJoint is a penalty
+            # spring whose max stable stiffness (naturalFrequency) scales with the
+            # articulation's position-solver iterations. Raise them 64 -> 192 so a
+            # much higher mimic naturalFrequency can hold without diverging (i.e.
+            # stiffer, less-giving pads). Iterations alone don't stiffen the pads --
+            # they unlock room to push naturalFrequency up (see the mimic overlay).
+            robot.spawn.articulation_props.solver_position_iteration_count = 192
             for _name, _vlim in (("panda_shoulder", 2.175), ("panda_forearm", 2.61)):
                 robot.actuators[_name].velocity_limit_sim = _vlim
                 robot.actuators[_name].armature = 1e-3
+                # Compliant arm: soften PD (stiffness 400->150, damping 80->40) so
+                # the arm yields under contact instead of shoving the now-rigid
+                # gripper into the part -- the "arm gives, gripper stays" behavior.
+                # Lower stiffness = the arm backs off more, so the gripper can still
+                # close/grip while pressed against the table.
+                robot.actuators[_name].stiffness = 150.0
+                robot.actuators[_name].damping = 40.0
 
-            # Kill the pad-into-part sink-in at its source. Penalty contact needs
-            # some geometric overlap to build the balancing force, so a clamped
-            # finger visibly buries into the part (worst on the gear hub). A small
-            # positive rest_offset makes the robot's collision shapes rest with a
-            # ~1.5 mm cushion, so the pads stop at the surface instead of sinking;
-            # contact_offset widens the detection band so contact engages before a
-            # fast finger step tunnels. This lives on the ROBOT only -- it changes
-            # grasp contact, never the part-vs-part insertion/mesh/thread fits.
-            robot.spawn.collision_props = sim_utils.CollisionPropertiesCfg(
-                contact_offset=0.01, rest_offset=0.0015
-            )
+            # Do NOT override robot.spawn.collision_props. The calibrated DROID
+            # USD's native gripper collision offsets grasp cleanly (verified
+            # working before the sim-fix commits); blanket-applying a
+            # CollisionPropertiesCfg here expands every robot collider (positive
+            # rest_offset -> finger pads self-collide + pad-vs-part contact
+            # mis-seats), which is what regressed collision. Keep native.
 
             # Joint velocities alongside joint positions in the policy obs (both
             # land in recorded HDF5s via the flat policy-obs recorder term).
