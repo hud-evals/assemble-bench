@@ -4,12 +4,11 @@
 *
 !assembly_bench
 !hud-python
-!env/IsaacLab-Arena
-assembly_bench/submodules
+!assembly_bench/submodules/IsaacLab-Arena
 assembly_bench/eval
 assembly_bench/notes
-env/IsaacLab-Arena/submodules/Isaac-GR00T
-env/IsaacLab-Arena/docs
+assembly_bench/submodules/IsaacLab-Arena/submodules/Isaac-GR00T
+assembly_bench/submodules/IsaacLab-Arena/docs
 **/__pycache__
 **/.git
 **/.venv

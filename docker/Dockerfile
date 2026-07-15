@@ -5,7 +5,7 @@
 # dev stack (Isaac-GR00T submodule, isaacteleop, gh/pipx tooling).
 #
 # Build (context = the workspace root holding hud-python/, assembly_bench/,
-# env/IsaacLab-Arena/):
+# assembly_bench/submodules/IsaacLab-Arena/):
 #
 #   docker build -f assembly_bench/docker/Dockerfile -t hud-assembly-env .
 #
@@ -29,7 +29,7 @@ ENV ISAAC_PY=/isaac-sim/python.sh
 WORKDIR /workspace
 
 # Isaac Lab, at the commit Arena pins.
-COPY env/IsaacLab-Arena/submodules/IsaacLab /workspace/submodules/IsaacLab
+COPY assembly_bench/submodules/IsaacLab-Arena/submodules/IsaacLab /workspace/submodules/IsaacLab
 ENV ISAACLAB_PATH=/workspace/submodules/IsaacLab \
     TERM=xterm
 # Install each extension with deps but WITHOUT extras — the extras are the RL
@@ -46,13 +46,13 @@ RUN ln -s /isaac-sim/ ${ISAACLAB_PATH}/_isaac_sim \
 # Arena runtime. The embodiment registry imports every embodiment eagerly, so
 # the sibling source packages (g1, ...) and pin-pink must be present even
 # though this bench only uses DROID.
-COPY env/IsaacLab-Arena/setup.py env/IsaacLab-Arena/extension.toml /workspace/
-COPY env/IsaacLab-Arena/isaaclab_arena /workspace/isaaclab_arena
-COPY env/IsaacLab-Arena/isaaclab_arena_environments /workspace/isaaclab_arena_environments
-COPY env/IsaacLab-Arena/isaaclab_arena_examples /workspace/isaaclab_arena_examples
-COPY env/IsaacLab-Arena/isaaclab_arena_g1 /workspace/isaaclab_arena_g1
-COPY env/IsaacLab-Arena/isaaclab_arena_gr00t /workspace/isaaclab_arena_gr00t
-COPY env/IsaacLab-Arena/isaaclab_arena_openpi /workspace/isaaclab_arena_openpi
+COPY assembly_bench/submodules/IsaacLab-Arena/setup.py assembly_bench/submodules/IsaacLab-Arena/extension.toml /workspace/
+COPY assembly_bench/submodules/IsaacLab-Arena/isaaclab_arena /workspace/isaaclab_arena
+COPY assembly_bench/submodules/IsaacLab-Arena/isaaclab_arena_environments /workspace/isaaclab_arena_environments
+COPY assembly_bench/submodules/IsaacLab-Arena/isaaclab_arena_examples /workspace/isaaclab_arena_examples
+COPY assembly_bench/submodules/IsaacLab-Arena/isaaclab_arena_g1 /workspace/isaaclab_arena_g1
+COPY assembly_bench/submodules/IsaacLab-Arena/isaaclab_arena_gr00t /workspace/isaaclab_arena_gr00t
+COPY assembly_bench/submodules/IsaacLab-Arena/isaaclab_arena_openpi /workspace/isaaclab_arena_openpi
 RUN ${ISAAC_PY} -m pip install --no-cache-dir "pin-pink==3.1.0" \
     && ${ISAAC_PY} -m pip install --no-cache-dir -e /workspace/
 
