@@ -31,7 +31,7 @@ with SimulationAppContext(args_cli):
     from assembly_bench.environments.assembly.variants import VARIANTS
 
     from experts import gear, nut, peg
-    from experts.base import Servo, pos_of
+    from experts.base import Servo, pos_of, quat_of
     from experts.record import Recorder
 
     class SuccessInfo(gym.Wrapper):
@@ -86,6 +86,9 @@ with SimulationAppContext(args_cli):
     parser.add_argument("--debug_seat", action="store_true",
                         help="per-env success sub-metrics (xy/gap/speed vs tolerances) each "
                              "report tick -- diagnoses seated-looking pegs that miss success")
+    parser.add_argument("--debug_fail", action="store_true",
+                        help="per-env post-mortem at each wave end (phase/failed/yaw/xy/gap) "
+                             "-- diagnoses which stage each failed episode died in")
     args_cli, _ = parser.parse_known_args()
     args_cli.enable_cameras = True
 
@@ -276,14 +279,20 @@ with SimulationAppContext(args_cli):
                 xy = torch.norm(hp[:, :2] - tgt[:, :2], dim=-1)
                 gap = (hp[:, 2] + variant.held_base_z_off) - tgt[:, 2]
                 spd = torch.norm(wp.to_torch(held.data.root_lin_vel_w), dim=-1)
+                def _yaw(name):
+                    x = quat_apply(quat_of(base, name),
+                                   torch.tensor([1.0, 0.0, 0.0], device=base.device).expand(base.num_envs, 3))
+                    return torch.atan2(x[:, 1], x[:, 0])
+                yerr = _yaw("fixed_part") - _yaw("held_part")
+                yerr = yerr - torch.pi * torch.round(yerr / torch.pi)   # 2-fold (rect)
                 for i in range(base.num_envs):
                     a = xy[i] < variant.align_tol
                     s = gap[i] < variant.seat_tol
                     v = spd[i] < 0.05
-                    print(f"[seat] w{wave} s{step:3d} env{i} xy={xy[i]*1e3:5.1f}mm "
-                          f"gap={gap[i]*1e3:6.1f}mm spd={spd[i]:.3f} | "
-                          f"align{'Y' if a else 'n'}({variant.align_tol*1e3:.1f}) "
-                          f"seat{'Y' if s else 'n'}({variant.seat_tol*1e3:.1f}) "
+                    ph = machine.phases[int(machine.phase[i])].name
+                    print(f"[seat] w{wave} s{step:3d} env{i} {ph:9s} xy={xy[i]*1e3:5.1f}mm "
+                          f"gap={gap[i]*1e3:6.1f}mm yaw={float(yerr[i])*57.3:5.1f}deg spd={spd[i]:.3f} | "
+                          f"align{'Y' if a else 'n'} seat{'Y' if s else 'n'} "
                           f"stbl{'Y' if v else 'n'} => {'SEATED' if (a and s and v) else '-'}",
                           flush=True)
             if bool(finished_once.all()):
@@ -291,6 +300,24 @@ with SimulationAppContext(args_cli):
         kept = recorder.flush() if recorder is not None else 0
         print(f"[expert] wave {wave}: seated {int(succ_ever.sum())}/{base.num_envs}"
               f"{f' recorded {kept} (total {recorder.n_demos})' if recorder else ''}", flush=True)
+        if args_cli.debug_fail:
+            # Per-env post-mortem: final phase, failed flag, and the seat/yaw
+            # residuals -- shows WHY each env failed (bad clock vs bad seat).
+            from isaaclab.utils.math import quat_apply
+            def _yaw(name):
+                x = quat_apply(quat_of(base, name),
+                               torch.tensor([1.0, 0.0, 0.0], device=base.device).expand(base.num_envs, 3))
+                return torch.atan2(x[:, 1], x[:, 0])
+            ye = _yaw("fixed_part") - _yaw("held_part")
+            ye = ye - torch.pi * torch.round(ye / torch.pi)   # 2-fold (rect)
+            hp = pos_of(base, "held_part"); fp = pos_of(base, "fixed_part")
+            xy = torch.norm(hp[:, :2] - fp[:, :2], dim=-1)
+            gap = hp[:, 2] - fp[:, 2]
+            for i in range(base.num_envs):
+                print(f"[fail] w{wave} env{i} phase={machine.phases[int(machine.phase[i])].name:9s} "
+                      f"failed={bool(machine.failed[i])} succ={bool(succ_ever[i])} "
+                      f"yaw_err={float(ye[i])*57.3:5.1f}deg xy={float(xy[i])*1e3:5.1f}mm "
+                      f"gap={float(gap[i])*1e3:6.1f}mm", flush=True)
         # Stop early once enough demos are banked (bulk data-gen target).
         if recorder is not None and args_cli.max_demos and recorder.n_demos >= args_cli.max_demos:
             print(f"[expert] reached {recorder.n_demos} demos (>= {args_cli.max_demos}); stopping", flush=True)

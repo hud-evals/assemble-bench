@@ -42,7 +42,10 @@ SEAT_OVERSHOOT = 0.002
 # align->insert: a rect peg with ~0.1 mm clearance and ~4 mm half-width jams
 # past ~1.5deg, so null to well under that before pressing.
 CLOCK_RATE = 0.08
-YAW_TOL = 0.02
+# Gate align->insert on yaw: a rect peg jams past ~1.5deg, and 0.02 rad (1.15deg)
+# left no margin for in-grip drift during the press -> ~half the square inserts
+# jammed. 0.01 rad (0.57deg) gives 2x headroom below the jam threshold.
+YAW_TOL = 0.01
 
 
 # Binary gripper, the CANONICAL DROID/openpi/RoboLab convention (finger_joint
@@ -221,6 +224,11 @@ def make_machine(base, servo, grasp_below_top=None, aim_off=None, seed=None, clo
         inhand[ids] = peg()[ids] - m.servo.ee()[ids]
 
     def t_insert(m):
+        # Keep clocking through the press: the rect peg slips in the grip once
+        # the align-phase clocking stops, so yaw drifts back up (measured 0.5 ->
+        # 5-8 deg during insert) and jams. Nulling the LIVE yaw error every step
+        # holds it under the jam threshold all the way down. No-op for round.
+        clock_step("insert", m)
         # Fixed anchor onto the bore: xy is a continuous CORRECTION (not a hard
         # gate) so a contact bump no longer stalls the descent, and -- unlike
         # the live `ee + (hole - peg)` servo -- the target never becomes
