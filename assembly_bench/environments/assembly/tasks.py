@@ -137,15 +137,17 @@ def reset_assembly_workspace(
     place(fixed_group, rand_fixed_xy, rand_fixed_yaw)
 
 
-def settle_and_render(env, env_ids, steps: int = 50) -> None:
+def settle_and_render(env, env_ids, steps: int = 120, rt_subframes: int = 32) -> None:
     """Post-reset warmup: settle the freshly jittered parts into contact, push
     the teleported transforms through fabric to the renderer (IsaacLab's
     reset() alone returns camera obs of the PREVIOUS state, see
-    notes/ISSUE_stale_reset_camera_obs.md), and re-converge the RTX temporal
-    accumulator -- its TAA/DLSS + denoiser history is invalidated by the
-    teleport, and needs ~50 frames before shadows/gloss/texture are fully
-    resolved.     Cameras only sample once per STEPPED frame at sensor fetch
-    (render-only calls change nothing), hence step + fetch per iteration.
+    notes/ISSUE_stale_reset_camera_obs.md), then flush the RTX temporal state
+    (DLAA history) with a Replicator-style subframe pump -- the step-loop's
+    one-render-per-step did NOT clear teleport ghosts (near-solid ghosts of
+    pre-reset poses survived 120 warmup frames and faded over ~300 recorded
+    frames). ``rep.orchestrator.step(rt_subframes=N)`` is NVIDIA's documented
+    flush for exactly this (SDG pipelines teleporting assets): it pauses the
+    timeline and re-renders the SAME frame N times across all render products.
     Steps the whole sim, so it assumes benchmark-style global resets.
 
     The raw ``sim.step`` bypasses the manager's ``write_data_to_sim``, so the
@@ -159,6 +161,13 @@ def settle_and_render(env, env_ids, steps: int = 50) -> None:
         env.sim.step(render=True)
         for sensor in env.scene.sensors.values():
             sensor.update(dt=0.0, force_recompute=True)
+    # Render-only pump: physics is settled and transforms are final; overwrite
+    # the temporal accumulator of every render product with the NEW scene.
+    import omni.replicator.core as rep
+    rep.orchestrator.step(rt_subframes=rt_subframes, delta_time=0.0, pause_timeline=True)
+    # Refetch so the first post-reset obs reads the pumped, ghost-free frame.
+    for sensor in env.scene.sensors.values():
+        sensor.update(dt=0.0, force_recompute=True)
 
 
 def _friction_term(asset_name: str, friction: float) -> EventTermCfg:
@@ -198,9 +207,9 @@ class AssemblyEventsCfg:
     friction_extra_0: EventTermCfg | None = None
     friction_extra_1: EventTermCfg | None = None
     # LAST field: terms run in declaration order, and the warmup must follow
-    # every pose-reset above.
+    # every pose-reset above. 120 frames clears DLAA teleport-ghosts (50 did not).
     settle_warmup: EventTermCfg = EventTermCfg(
-        func=settle_and_render, mode="reset", params={"steps": 50})
+        func=settle_and_render, mode="reset", params={"steps": 120})
 
 
 @register_task

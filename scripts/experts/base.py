@@ -160,6 +160,23 @@ class Machine:
         if len(ids) and self.phases[k].on_enter is not None:
             self.phases[k].on_enter(self, ids)
 
+    def restart(self, env_ids):
+        """Re-enter phase 0 after IsaacLab auto-resets these slots mid-wave.
+
+        Without this, ``hud.wrap`` opens a new trace while the expert still
+        thinks the env is in the terminal hold phase -- frozen home-pose
+        traces. Call once per ``done`` mask after ``env.step``.
+        """
+        if env_ids is None:
+            return
+        ids = env_ids.reshape(-1).long()
+        if ids.numel() == 0:
+            return
+        self.phase[ids] = 0
+        self.timer[ids] = 0
+        self.failed[ids] = False
+        self._enter(ids, 0)
+
     def _rate_limit(self, cur, target, gate, zcap):
         err = target - cur
         d = torch.clip(err, -self.pos_cap, self.pos_cap)

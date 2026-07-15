@@ -233,8 +233,16 @@ def make_machine(base, servo, grasp_below_top=None, aim_off=None, seed=None, clo
         t[:, 2] = m.servo.ee()[:, 2] + torch.where(slip, torch.zeros_like(dz), dz)
         return t, qhold(), CLOSE
 
+    def t_release(m):
+        # Press done: open the gripper in place so the peg drops/settles into the
+        # bore under gravity. A peg pressed to partial depth but held by the pads
+        # never satisfies the seat check (it hangs proud); releasing lets it seat.
+        return m.servo.ee(), qhold(), OPEN
+
     def t_hold(m):
-        return m.servo.ee(), qhold(), CLOSE
+        # Stay clear and open while the freed peg settles and the success check
+        # debounces -- never re-grip.
+        return m.servo.ee(), qhold(), OPEN
 
     # --- phase completion (full batch bool) ---------------------------------
     # Via-point tolerances stay LOOSE (the IK+PD chain has a few-mm steady-state
@@ -282,6 +290,18 @@ def make_machine(base, servo, grasp_below_top=None, aim_off=None, seed=None, clo
         gap = peg()[:, 2] - hole()[:, 2]
         return (xy_err(peg(), hole()) < 0.002) & (gap < 0.003)
 
+    def insert_done(m):
+        # Advance to release once the peg is aligned and engaged in the bore --
+        # either fully seated already, or the press has run long enough to have
+        # bottomed out. A peg that never centered (xy off) keeps pressing and
+        # times out (a real miss), so we don't release into thin air.
+        engaged = (xy_err(peg(), hole()) < 0.002) & ((peg()[:, 2] - hole()[:, 2]) < 0.02)
+        return engaged & (seated(m) | (m.timer > 80))
+
+    def released(m):
+        # The freed peg has settled (dropped into the bore and come to rest).
+        return peg_speed() < 0.005
+
     never = lambda m: torch.zeros(N, dtype=torch.bool, device=dev)
 
     machine = Machine(base, servo, [
@@ -300,7 +320,10 @@ def make_machine(base, servo, grasp_below_top=None, aim_off=None, seed=None, clo
         Phase("align", t_align, aligned, timeout=120, zcap=0.4),
         # No xy gate: xy is corrected continuously by the fixed anchor while the
         # gentle zcap presses down, so contact can't stall the descent.
-        Phase("insert", t_insert, seated, timeout=200, zcap=0.15, on_enter=enter_insert),
+        Phase("insert", t_insert, insert_done, timeout=200, zcap=0.15, on_enter=enter_insert),
+        # Release the peg and let it settle into the bore, then hold clear/open.
+        # Timeout just advances to hold (a slow-settling peg isn't a failure).
+        Phase("release", t_release, released, timeout=90, fail_on_timeout=False),
         Phase("hold", t_hold, never, timeout=10**9),
     ])
     name2idx.update({ph.name: i for i, ph in enumerate(machine.phases)})

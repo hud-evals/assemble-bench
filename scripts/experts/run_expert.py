@@ -21,6 +21,15 @@ args_cli, _ = parser.parse_known_args()
 args_cli.enable_cameras = True
 
 with SimulationAppContext(args_cli):
+    # Disable RTX geometry streaming BEFORE the scene loads: with
+    # readTransformsFromFabricInRenderDelegate it holds stale transforms for
+    # teleported parts (kit warns "dynamic objects not streaming correctly"),
+    # so the settle warmup converges DLAA's history on the PRE-reset block
+    # poses -> episode-long ghosts in wave-1+ recordings.
+    import carb
+    carb.settings.get_settings().set_bool(
+        "/app/usdrt/scene_delegate/geometryStreaming/enabled", False)
+
     import gymnasium as gym
     import torch
 
@@ -30,7 +39,7 @@ with SimulationAppContext(args_cli):
     from assembly_bench.environments.assembly.assembly import AssemblyBenchEnvironment
     from assembly_bench.environments.assembly.variants import VARIANTS
 
-    from experts import nut, peg
+    from experts import gear, nut, peg
     from experts.base import Servo, pos_of
     from experts.record import Recorder
 
@@ -72,12 +81,20 @@ with SimulationAppContext(args_cli):
     parser.add_argument("--calib_toollen", type=str, default=None, choices=["open", "closed"],
                         help="descend the gripper (open|closed) onto the peg; flange z at "
                              "first contact - peg length = flange->tip length in that state")
+    parser.add_argument("--language_instruction", type=str, default=None,
+                        help="override the task's own description (Arena builder reads this; "
+                             "None falls back to task.get_task_description())")
     parser.add_argument("--record", type=str, default=None,
                         help="write success-filtered episodes to this HDF5 (for LeRobot export)")
+    parser.add_argument("--max_demos", type=int, default=None,
+                        help="stop after this many successful demos are recorded (bulk data-gen)")
     parser.add_argument("--stream", action="store_true",
                         help="force HUD trace streaming even during a --record run (default: "
                              "streaming is ON for interactive runs, OFF for --record so bulk "
                              "data-gen never stalls on a dead telemetry endpoint)")
+    parser.add_argument("--debug_seat", action="store_true",
+                        help="per-env success sub-metrics (xy/gap/speed vs tolerances) each "
+                             "report tick -- diagnoses seated-looking pegs that miss success")
     args_cli, _ = parser.parse_known_args()
     args_cli.enable_cameras = True
 
@@ -148,11 +165,22 @@ with SimulationAppContext(args_cli):
         env.close()
         raise SystemExit
 
-    recorder = Recorder(base, args_cli.record, args_cli.task, variant.instruction) \
+    recorder = (
+        Recorder(
+            base, args_cli.record, args_cli.task, variant.instruction,
+            max_demos=args_cli.max_demos,
+        )
         if args_cli.record else None
+    )
 
     for wave in range(args_cli.waves):
         env.reset()
+        # hud.wrap opens a fresh trace after every per-slot auto-reset. Restore
+        # the four initial slots for each explicit wave; completed slots are
+        # removed below so a fast success cannot create a short follow-on trace
+        # while slower slots finish their first episode.
+        if getattr(env, "_rec", None) is not None:
+            env._rec.record_indices = list(range(min(base.num_envs, 4)))
         servo = Servo(base)
         aim_off = None
         if args_cli.sweep_aim:
@@ -167,6 +195,13 @@ with SimulationAppContext(args_cli):
                 base, servo, aim_off=aim_off, seed=seed,
                 clock=variant.rand_fixed_yaw > 0.0,
             )
+        elif variant.family == "gear_mesh":
+            if aim_off is not None:
+                raise ValueError("--sweep_aim is currently a peg calibration option")
+            machine = gear.make_machine(
+                base, servo, size=args_cli.task.removeprefix("gear_"),
+                seat_off=variant.seat_off, seed=seed,
+            )
         elif variant.family == "nut_thread":
             if aim_off is not None:
                 raise ValueError("--sweep_aim is currently a peg calibration option")
@@ -174,21 +209,28 @@ with SimulationAppContext(args_cli):
             machine = nut.make_machine(base, servo, size=size, seed=seed)
         else:
             raise NotImplementedError(f"no scripted expert for family {variant.family!r}")
-        done_ever = torch.zeros(base.num_envs, dtype=torch.bool, device=base.device)
-        succ_ever = torch.zeros_like(done_ever)
+        # The wave ends once every slot has completed its first episode.
+        finished_once = torch.zeros(base.num_envs, dtype=torch.bool, device=base.device)
+        succ_ever = torch.zeros_like(finished_once)
 
         for step in range(max_steps):
             action = machine.action()
-            # A finished/terminated env holds its current joints (zero action
-            # would command all-zeros joint targets and yank the arm).
-            hold = torch.cat([wp.to_torch(base.scene["robot"].data.joint_pos)[:, :7],
-                              action[:, 7:]], dim=-1)
-            action = torch.where(done_ever.unsqueeze(-1), hold, action)
+            # A completed slot was auto-reset inside env.step. Hold its current
+            # reset pose while the other slots finish; do not start episode 2.
+            hold = torch.cat([
+                wp.to_torch(base.scene["robot"].data.joint_pos)[:, :7],
+                action[:, 7:],
+            ], dim=-1)
+            action = torch.where(finished_once.unsqueeze(-1), hold, action)
             obs, _, terminated, truncated, _ = env.step(action)
             succ_now = base.termination_manager.get_term("success")
             done_now = terminated | truncated
             if recorder is not None:
                 recorder.step(obs, action, done_now, succ_now)
+            if done_now.any() and getattr(env, "_rec", None) is not None:
+                env._rec.record_indices = [
+                    i for i in env._rec.record_indices if not bool(done_now[i])
+                ]
             if args_cli.debug_env0:
                 from isaaclab.utils.math import quat_apply
                 axis = quat_apply(servo.ee_quat()[:1], torch.tensor(
@@ -203,7 +245,7 @@ with SimulationAppContext(args_cli):
                       f"Lpad=({p[li][0]:.4f},{p[li][1]:.4f},{p[li][2]:.4f}) "
                       f"Rpad=({p[ri][0]:.4f},{p[ri][1]:.4f},{p[ri][2]:.4f})", flush=True)
             succ_ever |= succ_now
-            done_ever |= done_now
+            finished_once |= done_now
             if args_cli.snap_every and step % args_cli.snap_every == 0:
                 import os as _os
 
@@ -211,28 +253,57 @@ with SimulationAppContext(args_cli):
                 _os.makedirs("/tmp/expert_snaps", exist_ok=True)
                 for cam in ("front_cam_rgb", "wrist_camera_rgb"):
                     frame = obs["camera_obs"][cam][0].to(torch.uint8).cpu().numpy()[..., :3]
-                    Image.fromarray(frame).resize((640, 360)).save(
-                        f"/tmp/expert_snaps/w{wave}_s{step:03d}_{cam.split('_')[0]}.jpg")
+                    # Native resolution: these snaps are the render-quality reference.
+                    Image.fromarray(frame).save(
+                        f"/tmp/expert_snaps/w{wave}_s{step:03d}_{cam.split('_')[0]}.png")
                 view = base.render()   # third-person viewer (look-at-held-part)
                 if view is not None:
                     Image.fromarray(view[..., :3]).save(
                         f"/tmp/expert_snaps/w{wave}_s{step:03d}_viewer.jpg")
-            if step % 25 == 0 or bool(done_ever.all()):
+            if step % 25 == 0 or bool(finished_once.all()):
                 p, h = pos_of(base, "held_part")[0], pos_of(base, "fixed_part")[0]
                 t, q = servo.tcp()[0], servo.ee_quat()[0]
                 finger = float(wp.to_torch(base.scene["robot"].data.joint_pos)[0, 7])
                 print(f"[expert] w{wave} s{step:3d} phases={machine.report()} "
-                      f"succ={int(succ_ever.sum())}/{base.num_envs} done={int(done_ever.sum())} "
+                      f"succ={int(succ_ever.sum())}/{base.num_envs} "
+                      f"finished={int(finished_once.sum())} "
                       f"fail={int(machine.failed.sum())} | env0 "
-                      f"peg=({p[0]:.3f},{p[1]:.3f},{p[2]:.3f}) hole=({h[0]:.3f},{h[1]:.3f}) "
+                      f"part=({p[0]:.3f},{p[1]:.3f},{p[2]:.3f}) "
+                      f"fixture=({h[0]:.3f},{h[1]:.3f}) "
                       f"tcp=({t[0]:.3f},{t[1]:.3f},{t[2]:.3f}) "
                       f"quat=({q[0]:.2f},{q[1]:.2f},{q[2]:.2f},{q[3]:.2f}) finger={finger:.2f}",
                       flush=True)
-            if bool(done_ever.all()):
+            if args_cli.debug_seat and (step % 25 == 0 or bool(finished_once.all())):
+                from isaaclab.utils.math import quat_apply
+                held = base.scene["held_part"]
+                fixed = base.scene["fixed_part"]
+                hp = wp.to_torch(held.data.root_pos_w) - base.scene.env_origins
+                fp = wp.to_torch(fixed.data.root_pos_w) - base.scene.env_origins
+                fq = wp.to_torch(fixed.data.root_quat_w)
+                off = torch.tensor(variant.seat_off, device=base.device).expand(base.num_envs, 3)
+                tgt = fp + quat_apply(fq, off)
+                xy = torch.norm(hp[:, :2] - tgt[:, :2], dim=-1)
+                gap = (hp[:, 2] + variant.held_base_z_off) - tgt[:, 2]
+                spd = torch.norm(wp.to_torch(held.data.root_lin_vel_w), dim=-1)
+                for i in range(base.num_envs):
+                    a = xy[i] < variant.align_tol
+                    s = gap[i] < variant.seat_tol
+                    v = spd[i] < 0.05
+                    print(f"[seat] w{wave} s{step:3d} env{i} xy={xy[i]*1e3:5.1f}mm "
+                          f"gap={gap[i]*1e3:6.1f}mm spd={spd[i]:.3f} | "
+                          f"align{'Y' if a else 'n'}({variant.align_tol*1e3:.1f}) "
+                          f"seat{'Y' if s else 'n'}({variant.seat_tol*1e3:.1f}) "
+                          f"stbl{'Y' if v else 'n'} => {'SEATED' if (a and s and v) else '-'}",
+                          flush=True)
+            if bool(finished_once.all()):
                 break
         kept = recorder.flush() if recorder is not None else 0
         print(f"[expert] wave {wave}: seated {int(succ_ever.sum())}/{base.num_envs}"
-              f"{f' recorded {kept}' if recorder else ''}", flush=True)
+              f"{f' recorded {kept} (total {recorder.n_demos})' if recorder else ''}", flush=True)
+        # Stop early once enough demos are banked (bulk data-gen target).
+        if recorder is not None and args_cli.max_demos and recorder.n_demos >= args_cli.max_demos:
+            print(f"[expert] reached {recorder.n_demos} demos (>= {args_cli.max_demos}); stopping", flush=True)
+            break
         if aim_off is not None:
             fingers = wp.to_torch(base.scene["robot"].data.joint_pos)[:, 7]
             peg_z = pos_of(base, "held_part")[:, 2]

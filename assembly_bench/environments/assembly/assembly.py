@@ -42,9 +42,14 @@ def assembly_bench_env_cfg_callback(env_cfg):
     # diverges (joint vels blow to 1e30+). Raise it so TGS actually damps the
     # contact velocity and ramming stays bounded.
     env_cfg.sim.physics.max_velocity_iteration_count = 4
-    # DLAA instead of the default DLSS: native-resolution temporal AA. DLSS
-    # renders low-res and upscales via temporal reprojection, which smears
-    # moving/teleported geometry into ghosts and shimmers edges (aliasing).
+    # DLAA (native-res temporal AA): its history is also the denoiser -- FXAA
+    # A/B measured temporal grain ~3.0 vs DLAA's ~0.15 (unusable boil), and
+    # per-frame knobs (spp, DL denoiser) proved inert at runtime. The per-wave
+    # teleport ghosts come from RTX geometry streaming holding stale transforms
+    # (kit warning: readTransformsFromFabricInRenderDelegate + geometry
+    # streaming "dynamic objects not streaming correctly"), so ghosting is
+    # fixed at the source: run_expert disables geometry streaming via carb
+    # right after app launch, before the scene loads.
     env_cfg.sim.render = RenderCfg(antialiasing_mode="DLAA")
     return env_cfg
 
