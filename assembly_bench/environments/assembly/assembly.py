@@ -69,7 +69,9 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
         from isaaclab_arena.utils.pose import Pose
         from isaaclab_arena_environments import mdp
 
-        # Importing scene registers the asm_* assets with the AssetRegistry.
+        # Importing scene registers the asm_* assets with the AssetRegistry;
+        # importing embodiments registers droid_abs_joint_pos_softmimic.
+        import assembly_bench.environments.assembly.embodiments  # noqa: F401
         import assembly_bench.environments.assembly.scene  # noqa: F401
         from assembly_bench.environments.assembly.cameras import make_assembly_camera_cfg
         from assembly_bench.environments.assembly.tasks import NISTAssemblyTask
@@ -91,104 +93,12 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
         embodiment = self.asset_registry.get_asset_by_name(args_cli.embodiment)(
             enable_cameras=args_cli.enable_cameras,
         )
-        if args_cli.embodiment.startswith("droid"):
-            # Keep Arena's calibrated DROID asset (franka_robotiq_2f_85_flattened.usd):
-            # its wrist camera is mounted frame-for-frame against the source demos.
-            from isaaclab.managers import ObservationTermCfg as ObsTerm
-
-            from assembly_bench.environments.assembly.observations import arm_joint_vel
-
-            # Keep the DROID USD's native firm finger drive (the Arena "gripper"
-            # actuator: stiffness/damping = None -> USD-authored gains). It is
-            # stiff, so the pad stops firmly at the part surface; the earlier soft
-            # retune (stiffness 17) let the finger creep into the grasped part --
-            # the collision regression. Explosion safety comes from the softened
-            # mimic overlay below (the mimic coupling, not the finger drive, was
-            # the divergence root cause per probe_ram), so the firm drive can stay
-            # without reintroducing the blow-up.
-            robot = embodiment.scene_config.robot
-
-            # Soften the Robotiq mimic coupling. The USD authors it near-rigid and
-            # undamped (naturalFrequency 1e6/1000, dampingRatio 0/0.05); at 60 Hz
-            # that penalty spring is numerically unstable (omega*dt >> 1), so a hard
-            # ram makes the coupling self-amplify and the gripper explodes. Author a
-            # local overlay USD that references the calibrated asset and only
-            # overrides the mimic spring to a stiff, well-damped coupling
-            # (naturalFrequency 1000, dampingRatio 0.7). 1000 diverged natively at
-            # 64 solver iters; it holds now that solver_position_iteration_count is
-            # raised to 192 (below), which gives the penalty spring the headroom to
-            # carry this stiffness -- verify with probe_ram. PhysX parses joint
-            # params at spawn, so an actuator override can't reach them -- it must
-            # be on the joint prim.
-            import os
-            import tempfile
-
-            from pxr import Sdf, Usd
-
-            _overlay = os.path.join(tempfile.gettempdir(), "droid_softened_mimic.usd")
-            if os.path.exists(_overlay):
-                os.remove(_overlay)
-            _ov = Usd.Stage.CreateNew(_overlay)
-            _root = _ov.OverridePrim("/panda")
-            _root.GetReferences().AddReference(robot.spawn.usd_path)
-            _ov.SetDefaultPrim(_root.GetPrim())
-            for _jp, _axis in (
-                ("right_outer_knuckle_joint", "rotZ"),
-                ("right_inner_finger_joint", "rotX"),
-                ("right_inner_finger_knuckle_joint", "rotX"),
-                ("left_inner_finger_knuckle_joint", "rotX"),
-                ("left_inner_finger_joint", "rotX"),
-            ):
-                _j = _ov.OverridePrim(f"/panda/Gripper/Robotiq_2F_85/Joints/{_jp}")
-                _j.CreateAttribute(
-                    f"physxMimicJoint:{_axis}:naturalFrequency", Sdf.ValueTypeNames.Float).Set(1000.0)
-                _j.CreateAttribute(
-                    f"physxMimicJoint:{_axis}:dampingRatio", Sdf.ValueTypeNames.Float).Set(0.7)
-            _ov.GetRootLayer().Save()
-            robot.spawn.usd_path = _overlay
-
-            # Native "gripper" actuator (firm finger drive) kept as-is -- no retune.
-
-            # Durability: make ramming the table stall instead of explode.
-            # `velocity_limit` is a no-op on implicit actuators, so the arm ran
-            # uncapped at the USD's 10 rad/s -- restore the real panda joint-speed
-            # limits via velocity_limit_sim; armature (rotor inertia, base-panda
-            # value) damps high-PD jitter under contact. The key stabilizer is the
-            # articulation velocity iterations (0 -> 8): with 0 the solver never
-            # damps contact velocity and a hard ram diverges; more iterations only
-            # sharpen contact resolution, so keep them high. Do NOT starve the
-            # robot's contact force (a low max_contact_impulse) or over-cap
-            # depenetration -- that lets the arm tunnel through the fixed blocks.
-            robot.spawn.rigid_props.max_depenetration_velocity = 5.0
-            robot.spawn.articulation_props.solver_velocity_iteration_count = 8
-            # Mimic-coupling stability headroom: a physxMimicJoint is a penalty
-            # spring whose max stable stiffness (naturalFrequency) scales with the
-            # articulation's position-solver iterations. Raise them 64 -> 192 so a
-            # much higher mimic naturalFrequency can hold without diverging (i.e.
-            # stiffer, less-giving pads). Iterations alone don't stiffen the pads --
-            # they unlock room to push naturalFrequency up (see the mimic overlay).
-            robot.spawn.articulation_props.solver_position_iteration_count = 192
-            for _name, _vlim in (("panda_shoulder", 2.175), ("panda_forearm", 2.61)):
-                robot.actuators[_name].velocity_limit_sim = _vlim
-                robot.actuators[_name].armature = 1e-3
-                # Compliant arm: soften PD (stiffness 400->150, damping 80->40) so
-                # the arm yields under contact instead of shoving the now-rigid
-                # gripper into the part -- the "arm gives, gripper stays" behavior.
-                # Lower stiffness = the arm backs off more, so the gripper can still
-                # close/grip while pressed against the table.
-                robot.actuators[_name].stiffness = 150.0
-                robot.actuators[_name].damping = 40.0
-
-            # Do NOT override robot.spawn.collision_props. The calibrated DROID
-            # USD's native gripper collision offsets grasp cleanly (verified
-            # working before the sim-fix commits); blanket-applying a
-            # CollisionPropertiesCfg here expands every robot collider (positive
-            # rest_offset -> finger pads self-collide + pad-vs-part contact
-            # mis-seats), which is what regressed collision. Keep native.
-
-            # Joint velocities alongside joint positions in the policy obs (both
-            # land in recorded HDF5s via the flat policy-obs recorder term).
-            embodiment.observation_config.policy.joint_vel = ObsTerm(func=arm_joint_vel)
+        # The assembly benchmark's DROID contact-stability tuning (softened
+        # Robotiq mimic overlay + solver/PD) lives in the registered
+        # `droid_abs_joint_pos_softmimic` embodiment (see embodiments.py), the
+        # default below -- no imperative USD authoring in the build path. The
+        # calibrated DROID asset (wrist camera mounted frame-for-frame against
+        # the source demos) is preserved via a referencing overlay.
         if args_cli.embodiment == "droid_differential_ik":
             # Teleop embodiment fixes (Arena's DIK cfg is untested for DROID):
             # - body_name: upstream says "panda_link0" (the ARM BASE -- fixed-base
@@ -289,7 +199,9 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
         parser.add_argument("--task", type=str, default="peg_round_8mm_tight", choices=sorted(VARIANTS))
         # DROID platform (Franka + Robotiq 2F-85) with absolute joint-position
         # actions -- the source benchmark's droid_jointpos / pi0.5-DROID contract.
-        parser.add_argument("--embodiment", type=str, default="droid_abs_joint_pos")
+        # The _softmimic variant adds the benchmark's contact-stability tuning
+        # (see embodiments.py); plain droid_abs_joint_pos is the untuned stock.
+        parser.add_argument("--embodiment", type=str, default="droid_abs_joint_pos_softmimic")
         parser.add_argument("--hdr", type=str, default="asm_machine_shop",
                             help='HDR name from the registry (e.g. "asm_machine_shop", '
                                  '"carpentry_shop_robolab"), or "none"')
@@ -308,7 +220,7 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
 def make_assembly_env(
     task: str = "peg_round_8mm_tight",
     num_envs: int = 1,
-    embodiment: str = "droid_abs_joint_pos",
+    embodiment: str = "droid_abs_joint_pos_softmimic",
     hdr: str = "asm_machine_shop",
     light_intensity: float = 1500.0,
     reward: str = "none",
