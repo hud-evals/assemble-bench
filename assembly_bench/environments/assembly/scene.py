@@ -117,15 +117,14 @@ for _k, _m in GEAR_MASS.items():
 _register("asm_gear_base", f"{ASSET_DIR}/factory_gear_base.usd",
           mass=0.05, impulse_cap=GEAR_NUT_IMPULSE_CAP)
 
-# Nut family on the standard NIST GMC task board: generated watertight-
-# threaded M4-M20 tiers with baked brass/steel MDL (mass from the USDs' baked
-# density, 8000 kg/m^3). M16 is generated too, at the curated reference dims
-# (the curated factory pair renders un-metallic).
-for _s in (4, 8, 12, 16, 20):
+# Nut family on the NIST GMC board: IsaacGymEnvs factory OBJs converted to USD
+# (SDF + brass/steel MDL). Procedural gen_* pairs do not SDF-mate for descent.
+# M4 omitted — pad geometry cannot grasp the 3.2 mm hex from the board.
+for _s in (8, 12, 16, 20):
     for _t in ("loose", "tight"):
-        _register(f"asm_nut_m{_s}_{_t}", str(PARTS_DIR / f"gen_nut_m{_s}_{_t}.usd"),
+        _register(f"asm_nut_m{_s}_{_t}", str(PARTS_DIR / f"factory_nut_m{_s}_{_t}.usd"),
                   impulse_cap=GEAR_NUT_IMPULSE_CAP)
-        _register(f"asm_bolt_m{_s}_{_t}", str(PARTS_DIR / f"gen_bolt_m{_s}_{_t}.usd"),
+        _register(f"asm_bolt_m{_s}_{_t}", str(PARTS_DIR / f"factory_bolt_m{_s}_{_t}.usd"),
                   impulse_cap=GEAR_NUT_IMPULSE_CAP)
 _register("asm_nist_board", str(PARTS_DIR / "nist_gmc_base.usd"),
           mass=1.0, impulse_cap=GEAR_NUT_IMPULSE_CAP, kinematic=True)
