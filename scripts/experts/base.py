@@ -78,8 +78,7 @@ class Servo:
     #: this USD by descending a closed gripper onto the peg until first contact
     #: (run_expert --calib_toollen): 0.1717. The 2F-85 spec value (0.1628) is
     #: 9 mm short here. The ee_frame's tool_*finger frames are crank-mounted
-    #: and sit near the FLANGE when open -- they are NOT the pads; never aim
-    #: with them.
+    #: and are not the physical pinch center.
     TOOL_LEN = 0.1717
 
     def tool_axis(self):
@@ -108,7 +107,8 @@ class Servo:
         q_cur = self.ee_quat()
         delta = quat_box_minus(target_quat, q_cur)
         ang = torch.norm(delta, dim=-1, keepdim=True).clamp_min(1e-9)
-        step_quat = quat_box_plus(q_cur, delta * (ang.clamp(max=rot_cap) / ang))
+        cap = torch.as_tensor(rot_cap, device=ang.device, dtype=ang.dtype).reshape(-1, 1)
+        step_quat = quat_box_plus(q_cur, delta * (torch.minimum(ang, cap) / ang))
         self.ik.set_command(torch.cat([target_pos, step_quat], dim=-1))
         jac = wp.to_torch(self.robot.root_physx_view.get_jacobians())[:, self.jac_idx, :, :7]
         q = wp.to_torch(self.robot.data.joint_pos)[:, :7]
@@ -127,14 +127,15 @@ class Phase:
 
     target(m) -> (pos, quat, grip) full-batch EE targets (env-local);
     done(m) -> bool mask for envs that may advance; on_enter(m, ids) runs once
-    per env as it enters (capture anchors). gate/zcap shape the approach:
-    descend only when xy error < gate, cap downward speed by zcap.
+    per env as it enters (capture anchors). gate/pos_cap/zcap shape motion:
+    descend only when xy error < gate and cap translation per control step.
     """
 
-    def __init__(self, name, target, done, *, timeout, gate=None, zcap=1.0, on_enter=None,
-                 fail_on_timeout=True):
+    def __init__(self, name, target, done, *, timeout, gate=None, pos_cap=None,
+                 zcap=1.0, rot_cap=0.15, on_enter=None, fail_on_timeout=True):
         self.name, self.target, self.done = name, target, done
-        self.timeout, self.gate, self.zcap, self.on_enter = timeout, gate, zcap, on_enter
+        self.timeout, self.gate, self.pos_cap, self.zcap = timeout, gate, pos_cap, zcap
+        self.rot_cap, self.on_enter = rot_cap, on_enter
         # Timing out without `done` normally means the episode is unrecoverable
         # (missed grasp, jam): jump to the terminal phase instead of pretending.
         self.fail_on_timeout = fail_on_timeout
@@ -150,6 +151,7 @@ class Machine:
         self.phase = torch.zeros(N, dtype=torch.long, device=dev)
         self.timer = torch.zeros(N, dtype=torch.long, device=dev)
         self.failed = torch.zeros(N, dtype=torch.bool, device=dev)
+        self.failure_phase = torch.full((N,), -1, dtype=torch.long, device=dev)
         self._enter(torch.arange(N, device=dev), 0)
 
     @property
@@ -175,12 +177,13 @@ class Machine:
         self.phase[ids] = 0
         self.timer[ids] = 0
         self.failed[ids] = False
+        self.failure_phase[ids] = -1
         self._enter(ids, 0)
 
-    def _rate_limit(self, cur, target, gate, zcap):
+    def _rate_limit(self, cur, target, gate, pos_cap, zcap):
         err = target - cur
-        d = torch.clip(err, -self.pos_cap, self.pos_cap)
-        d[:, 2] = torch.clip(d[:, 2], -zcap * self.pos_cap, zcap * self.pos_cap)
+        d = torch.clip(err, -pos_cap, pos_cap)
+        d[:, 2] = torch.clip(d[:, 2], -zcap * pos_cap, zcap * pos_cap)
         if gate is not None:
             ok = torch.norm(err[:, :2], dim=-1) < gate
             d[:, 2] = torch.where(ok, d[:, 2], torch.zeros_like(d[:, 2]))
@@ -192,6 +195,7 @@ class Machine:
         pos = torch.zeros((N, 3), device=dev)
         quat = torch.zeros((N, 4), device=dev)
         grip = torch.zeros(N, device=dev)
+        rot_cap = torch.full((N,), 0.15, device=dev)
         adv = torch.zeros(N, dtype=torch.bool, device=dev)
         bail = torch.zeros(N, dtype=torch.bool, device=dev)
         last = len(self.phases) - 1
@@ -200,8 +204,10 @@ class Machine:
             if not m.any():
                 continue
             p, q, g = ph.target(self)
-            p = self._rate_limit(self.servo.ee(), p, ph.gate, ph.zcap)
+            pos_cap = self.pos_cap if ph.pos_cap is None else ph.pos_cap
+            p = self._rate_limit(self.servo.ee(), p, ph.gate, pos_cap, ph.zcap)
             pos[m], quat[m], grip[m] = p[m], q[m], g[m] if torch.is_tensor(g) else g
+            rot_cap[m] = ph.rot_cap
             ok, timeout = ph.done(self), self.timer >= ph.timeout
             if ph.fail_on_timeout:
                 bail |= m & timeout & ~ok
@@ -212,16 +218,26 @@ class Machine:
         if m.any():
             p, q, g = self.phases[last].target(self)
             pos[m], quat[m], grip[m] = p[m], q[m], g[m] if torch.is_tensor(g) else g
+            rot_cap[m] = self.phases[last].rot_cap
         self.timer += 1
         self.failed |= bail
+        self.failure_phase[bail] = self.phase[bail]
         self.phase[bail] = last
         moved = adv | bail
         self.phase[adv] += 1
         self.timer[moved] = 0
         for k in self.phase[moved].unique().tolist():
             self._enter((moved & (self.phase == k)).nonzero().squeeze(-1), k)
-        return self.servo.act(pos, quat, grip)
+        return self.servo.act(pos, quat, grip, rot_cap=rot_cap)
 
     def report(self):
         names = [self.phases[int(k)].name for k in self.phase]
+        return {n: names.count(n) for n in dict.fromkeys(names)}
+
+    def failure_report(self):
+        """Timeout source counts, preserving the phase before terminal hold."""
+        names = [
+            self.phases[int(k)].name
+            for k in self.failure_phase[self.failure_phase >= 0]
+        ]
         return {n: names.count(n) for n in dict.fromkeys(names)}
