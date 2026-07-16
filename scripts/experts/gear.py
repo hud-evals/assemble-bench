@@ -27,9 +27,13 @@ ALIGN_GAP = 0.035
 # Module-2 gears: pitch radius 10/20/30 mm, hence 10/20/30 teeth. A yaw range
 # of +/-pi/teeth covers one complete tooth pitch.
 GEAR_TEETH = {"small": 10, "medium": 20, "large": 30}
+YAW_SEARCH_SCALE = {"small": 1.5, "medium": 1.0, "large": 1.0}
 WIGGLE_PERIOD = 48.0
 PRESS_BIAS = 0.003
 SEAT_PRESS_BIAS = 0.005
+MESH_LOCK_GAP = {"small": 0.009, "medium": 0.009, "large": 0.005}
+REMESH_TIMEOUT = {"small": 240, "medium": 240, "large": 300}
+REALIGN_HOLD_GAP = {"small": 0.003, "medium": 0.003, "large": 0.006}
 
 
 def make_machine(base, servo, *, size, seat_off, seed=None):
@@ -53,7 +57,9 @@ def make_machine(base, servo, *, size, seat_off, seed=None):
     wiggle_sign = torch.ones(N, device=dev)
     aim_off = torch.zeros((N, 3), device=dev)
 
-    pitch_half = torch.pi / GEAR_TEETH[size]
+    # Small-gear contact compliance attenuates wrist yaw, so modest overtravel
+    # is required for the gear itself to cover one complete tooth pitch.
+    pitch_half = YAW_SEARCH_SCALE[size] * torch.pi / GEAR_TEETH[size]
     if seed is not None:
         g = torch.Generator(device=dev).manual_seed(seed)
         u = lambda lo, hi: lo + (hi - lo) * torch.rand(N, generator=g, device=dev)
@@ -138,8 +144,9 @@ def make_machine(base, servo, *, size, seat_off, seed=None):
     def t_realign(m):
         p, q, grip = t_align(m)
         gap = gear()[:, 2] - shaft()[:, 2]
-        deep = (xy_err(gear(), shaft()) < 0.002) & (gap < 0.003)
+        deep = (xy_err(gear(), shaft()) < 0.002) & (gap < REALIGN_HOLD_GAP[size])
         p[deep] = m.servo.ee()[deep]
+        q[deep] = m.servo.ee_quat()[deep]
         return p, q, grip
 
     def enter_mesh(m, ids):
@@ -163,8 +170,9 @@ def make_machine(base, servo, *, size, seat_off, seed=None):
             torch.full_like(gap, PRESS_BIAS),
         )
         dz = -torch.minimum(gap.clamp_min(0.0), bias)
+        press_ready = aligned & (tracking | mesh_locked)
         target[:, 2] = m.servo.ee()[:, 2] + torch.where(
-            aligned & tracking, dz, torch.zeros_like(dz)
+            press_ready, dz, torch.zeros_like(dz)
         )
 
         # Smoothly scan exactly one tooth pitch. The bounded target and XY gate
@@ -173,8 +181,9 @@ def make_machine(base, servo, *, size, seat_off, seed=None):
         candidate = wiggle_sign * pitch_half * torch.sin(phase)
         # A clashing gear rests around 9-10 mm above the seat, so the old
         # 12 mm threshold locked the first bad phase and released immediately.
-        # Keep searching until the gear has actually dropped into the mesh.
-        newly_locked = gap < 0.005
+        # Keep searching until the gear drops below the 9-10 mm tooth-clash
+        # shelf, then lock yaw and apply the stronger final seating preload.
+        newly_locked = gap < MESH_LOCK_GAP[size]
         searching = ~mesh_locked & ~newly_locked
         mesh_yaw[searching] = candidate[searching]
         mesh_locked.logical_or_(newly_locked)
@@ -262,7 +271,7 @@ def make_machine(base, servo, *, size, seat_off, seed=None):
         Phase("mesh", t_mesh, confirmed_seated, timeout=220, zcap=0.2,
               on_enter=enter_mesh, fail_on_timeout=False),
         Phase("realign", t_realign, realigned, timeout=100, zcap=0.3),
-        Phase("remesh", t_mesh, confirmed_seated, timeout=240, zcap=0.2,
+        Phase("remesh", t_mesh, confirmed_seated, timeout=REMESH_TIMEOUT[size], zcap=0.2,
               on_enter=enter_mesh),
         Phase("release", t_release, lambda m: m.timer >= 12, timeout=20,
               on_enter=enter_release, fail_on_timeout=False),
