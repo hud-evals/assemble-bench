@@ -69,6 +69,9 @@ RUN ${ISAAC_PY} -m pip install --no-cache-dir --ignore-installed \
         > /tmp/kit-constraints.txt \
     && ${ISAAC_PY} -m pip install --no-cache-dir -c /tmp/kit-constraints.txt \
         "/app/hud-python" msgpack \
+    # PyAV is the only extra dependency HUD video streaming needs. Install it
+    # bare so openpi-client's numpy<2 pin cannot downgrade Isaac's numpy 2.x.
+    && ${ISAAC_PY} -m pip install --no-cache-dir --no-deps "av>=12" \
     # openpi-client pins numpy<2 but only needs its msgpack codec — install
     # bare and keep kit's numpy.
     && ${ISAAC_PY} -m pip install --no-cache-dir --no-deps "openpi-client>=0.1.2" \
