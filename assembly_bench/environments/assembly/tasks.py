@@ -154,6 +154,17 @@ def settle_and_render(env, env_ids, steps: int = 120, rt_subframes: int = 32) ->
     home joint-position TARGET staged by ``reset_scene_to_default`` never
     reaches PhysX -- the arm teleports home but the stale prior-episode target
     drags it back off during settle. Re-flush each step so the PD holds home."""
+    # Native 1280x720 dual-camera renders are intentionally expensive. Keep the
+    # production defaults above, but let expert-development runs shorten this
+    # reset-only anti-ghosting pass without changing task configuration.
+    import os
+
+    steps = int(os.environ.get("ASSEMBLY_RESET_WARMUP_STEPS", steps))
+    rt_subframes = int(os.environ.get("ASSEMBLY_RESET_RT_SUBFRAMES", rt_subframes))
+    print(
+        f"[reset] settle warmup: physics_frames={steps} rt_subframes={rt_subframes}",
+        flush=True,
+    )
     del env_ids
     for _ in range(steps):
         for art in env.scene.articulations.values():
@@ -168,8 +179,14 @@ def settle_and_render(env, env_ids, steps: int = 120, rt_subframes: int = 32) ->
     # them from the NEW scene; a short pump re-converges quality before the
     # first recorded frame. (rep.orchestrator.step is NOT usable here: it
     # blocks on Replicator's capture pipeline, which this workflow never runs.)
-    import omni.kit.app
-    import omni.replicator.core as rep
+    # Only meaningful when rendering images. Under --disable_cameras (dev A/B
+    # runs) Replicator isn't loaded and there are no frames to de-ghost, so
+    # skip the toggle gracefully instead of crashing the reset.
+    try:
+        import omni.kit.app
+        import omni.replicator.core as rep
+    except ModuleNotFoundError:
+        return
     app = omni.kit.app.get_app()
     env.sim.set_setting("/app/player/playSimulations", False)
     rep.settings.set_render_rtx_realtime(antialiasing="FXAA")
