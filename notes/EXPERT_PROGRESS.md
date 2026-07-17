@@ -38,7 +38,7 @@ insertion (no correction under the peg/bore contact).
 
 **Pre-existing uncommitted (NOT touched this session):**
 - `assembly_bench/environments/assembly/assembly.py`
-- `rl/assembly_rlinf.py`, `rl/config/assembly_bench_ppo_openpi_pi05.yaml`
+- (removed) `rl/assembly_rlinf.py` — use `train.rl.runs.run_assembly` instead
 - untracked: `scripts/experts/record.py`, `scripts/experts/convert_lerobot.py`, `data/`
 
 **Validated this session (wrist roll ±0.35 + transport live-servo + insert slip-clamp):**

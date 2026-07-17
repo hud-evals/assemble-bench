@@ -44,9 +44,8 @@ class AssemblyVariant:
     held_base_z_off: float = 0.0
     align_tol: float = 0.0025         # xy distance to target
     seat_tol: float = 0.003           # seat gap (one-sided: gap < tol)
-    # Staged-reward geometry (used only when reward_mode="staged"): the engage
-    # milestone gap (near the socket/shaft/thread mouth), the depth scale for
-    # continuous partial credit, and the lift-clear height off the stand.
+    # Staged-reward geometry (reward_mode="staged"): engage gap (socket/shaft/
+    # thread mouth), depth scale for Φ_depth, lift-clear height off the stand.
     engage_gap: float = 0.025
     partial_socket_h: float = 0.025
     lift_clear: float = 0.03

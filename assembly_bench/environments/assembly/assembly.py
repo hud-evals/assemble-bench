@@ -206,8 +206,8 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
                             help='HDR name from the registry (e.g. "asm_machine_shop", '
                                  '"carpentry_shop_robolab"), or "none"')
         parser.add_argument("--light_intensity", type=float, default=1500.0)
-        # "staged" enables the RL shaping reward (rewards.py); default "none"
-        # keeps the env reward-free for eval.
+        # "staged" enables dense idempotent RL shaping (rewards.py); default
+        # "none" keeps the env reward-free for eval.
         parser.add_argument("--reward", type=str, default="none", choices=["none", "staged"])
         # Teleop demo collection (Arena teleop.py / record_demos.py read this).
         # Requires --embodiment droid_differential_ik; default None keeps eval/
@@ -227,10 +227,9 @@ def make_assembly_env(
 ):
     """Build the assembly Arena gym env for one variant (the Isaac app must be up).
 
-    Shared factory for both run paths: the HUD server (``env.py``) and the RLinf
-    training adapter. ``reward="staged"`` turns on the RL shaping reward; "none"
-    (default) keeps the env reward-free for eval. ``num_envs`` is the vectorization
-    width -- one build serves N lockstep slots.
+    Shared factory for the HUD server (``env.py``) / ``train.rl`` collect path.
+    ``reward="staged"`` turns on dense idempotent shaping; "none" (default) keeps
+    the env reward-free for eval. ``num_envs`` is the vectorization width.
     """
     import carb
     from isaaclab_arena.cli.isaaclab_arena_cli import (

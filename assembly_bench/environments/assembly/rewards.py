@@ -1,21 +1,19 @@
 """Staged assembly reward for RL fine-tuning (opt-in; eval leaves it off).
 
-The source benchmark's ``RewardBook`` ported into one Arena reward term: a
-once-fired milestone staircase (grasped < lifted < engaged < success) plus a
-continuous bonus for every new best insertion depth. Sparse task success alone
-is too weak a signal for PPO, so this hands out credit for each sub-skill and
-for partial insertion progress.
+Dense, idempotent shaping for PA-RL / FilteredBC: once-fired milestones plus
+new-best potentials (pay only progress, never a per-step "being close" rate).
 
-Only ``get_rewards_cfg()`` (via ``build_rewards_cfg``) wires this in, and only
-when the task is built with ``reward_mode="staged"`` -- the default eval path
-returns no reward terms, so success/termination semantics are unchanged.
+Phases:
+  pre-lift  -- Φ_grasp: EE approaches the held part
+  post-lift -- Φ_xy / Φ_depth: held part approaches the seat
+  nut only  -- after engage: once-fired first-turn + Φ_thread (new-best turns)
 
-The milestone predicates reuse the exact seat geometry the success check
-(``tasks.part_seated``) computes, so "engaged"/"success" here track the same
-target the benchmark grades on. State (per-env fired flags + running best
-depth) lives on a ``ManagerTermBase`` -- the same stateful-term pattern as
-``tasks.hold_success`` -- so it persists across steps and resets per episode.
+Wired only when ``reward_mode="staged"``; eval stays reward-free. Seat geometry
+matches ``tasks.part_seated``. State lives on ``ManagerTermBase`` (same pattern
+as ``hold_success``).
 """
+
+import math
 
 import torch
 
@@ -28,25 +26,32 @@ from isaaclab.utils.math import quat_apply
 from assembly_bench.environments.assembly.tasks import part_seated
 from assembly_bench.environments.assembly.variants import TABLE_TOP_Z, AssemblyVariant
 
-# Milestone payouts (source benchmark RewardBook weights).
-W_GRASP = 0.1
-W_LIFT = 0.2
+# Once-fired milestones.
+W_LIFT = 0.5
 W_ENGAGE = 0.4
-W_SUCCESS = 1.0
-W_PARTIAL = 0.5
+W_THREAD_START = 1.5   # nut: first meaningful turn on the bolt
+W_SUCCESS = 2.0
 
-# Grasp geometry (source benchmark constants, base_link flange EE frame).
-GRASP_XY_TOL = 0.03
-GRASP_Z_OFF = 0.16          # flange -> fingertip pad along the approach axis (m)
-GRASP_Z_TOL = 0.06
-GRASP_CLOSED_FINGER = 0.2   # gripper_pos (finger_joint/(pi/4)) past this => closed
-MILESTONES = ("grasped", "lifted", "engaged", "success")
+# Continuous new-best potentials (total contribution capped by weight * 1.0).
+W_GRASP_PC = 0.2
+W_ALIGN_PC = 0.3
+W_DEPTH_PC = 0.5
+W_THREAD_PC = 0.8
+
+# Grasp approach (flange EE -> held). Falloff radius for Φ_grasp.
+GRASP_Z_OFF = 0.16
+GRASP_DIST0 = 0.15
+# Seat xy approach falloff (m); depth uses variant.partial_socket_h.
+ALIGN_DIST0 = 0.10
+# Nut thread: first-turn threshold + target cumulative |Δyaw| (~1.5 turns).
+THREAD_START_RAD = 0.3
+THREAD_TARGET_RAD = 1.5 * 2.0 * math.pi
+
+MILESTONES = ("lifted", "engaged", "thread_start", "success")
 
 
 def _align_and_gap(env, held_cfg, fixed_cfg, seat_off, held_base_z_off):
-    """Shared seat geometry: (xy distance to target, seat gap). Mirrors
-    ``part_seated`` -- target = fixed root + seat_off rotated into the fixed
-    frame; gap = held base height above the target (<=0 fully seated)."""
+    """Seat geometry: (xy distance to target, seat gap). Mirrors ``part_seated``."""
     held = env.scene[held_cfg.name]
     fixed = env.scene[fixed_cfg.name]
     held_pos = wp.to_torch(held.data.root_pos_w) - env.scene.env_origins
@@ -59,41 +64,38 @@ def _align_and_gap(env, held_cfg, fixed_cfg, seat_off, held_base_z_off):
     return xy, gap
 
 
-def _grasped(env, held_cfg, robot_cfg, ee_body, gripper_joint) -> torch.Tensor:
-    """Held part centered under the closed gripper (kinematic outcome, not a
-    grasp-quality score). EE is the flange, so a grasped part sits ~GRASP_Z_OFF
-    below it."""
-    held = env.scene[held_cfg.name]
-    robot = env.scene[robot_cfg.name]
-    held_pos = wp.to_torch(held.data.root_pos_w) - env.scene.env_origins
-    ee_idx = robot.data.body_names.index(ee_body)
-    ee_pos = wp.to_torch(robot.data.body_pos_w)[:, ee_idx] - env.scene.env_origins
-    gj_idx = robot.data.joint_names.index(gripper_joint)
-    grip = wp.to_torch(robot.data.joint_pos)[:, gj_idx] / (torch.pi / 4)
-    near_xy = torch.norm(held_pos[:, :2] - ee_pos[:, :2], dim=-1) < GRASP_XY_TOL
-    near_z = (ee_pos[:, 2] - held_pos[:, 2] - GRASP_Z_OFF).abs() < GRASP_Z_TOL
-    return near_xy & near_z & (grip > GRASP_CLOSED_FINGER)
+def _yaw_z(q: torch.Tensor) -> torch.Tensor:
+    """World-z yaw from xyzw quaternions [N,4]."""
+    x, y, z, w = q.unbind(-1)
+    return torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
 
 
 class staged_assembly_reward(ManagerTermBase):
-    """Once-fired milestone staircase + new-best-depth bonus.
-
-    Per env: ``_fired`` (a bool per milestone) and ``_best_pc`` (running best
-    partial credit). ``reset`` clears them for resetting envs; ``__call__`` pays
-    each milestone the first time it holds and rewards any gain in best depth.
-    """
+    """Phase-gated new-best potentials + once-fired milestones."""
 
     def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRLEnv):
         super().__init__(cfg, env)
-        self._fired = {k: torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
-                       for k in MILESTONES}
-        self._best_pc = torch.zeros(env.num_envs, device=env.device)
+        n, dev = env.num_envs, env.device
+        self._fired = {k: torch.zeros(n, dtype=torch.bool, device=dev) for k in MILESTONES}
+        self._best_grasp = torch.zeros(n, device=dev)
+        self._best_xy = torch.zeros(n, device=dev)
+        self._best_depth = torch.zeros(n, device=dev)
+        self._best_thread = torch.zeros(n, device=dev)
+        self._prev_yaw = torch.zeros(n, device=dev)
+        self._yaw_valid = torch.zeros(n, dtype=torch.bool, device=dev)
+        self._turns = torch.zeros(n, device=dev)
 
     def reset(self, env_ids=None) -> None:
         idx = slice(None) if env_ids is None else env_ids
         for v in self._fired.values():
             v[idx] = False
-        self._best_pc[idx] = 0.0
+        self._best_grasp[idx] = 0.0
+        self._best_xy[idx] = 0.0
+        self._best_depth[idx] = 0.0
+        self._best_thread[idx] = 0.0
+        self._prev_yaw[idx] = 0.0
+        self._yaw_valid[idx] = False
+        self._turns[idx] = 0.0
 
     def __call__(
         self,
@@ -110,20 +112,57 @@ class staged_assembly_reward(ManagerTermBase):
         partial_socket_h: float,
         stand_z: float,
         ee_body: str,
-        gripper_joint: str,
+        family: str = "peg_insert",
     ) -> torch.Tensor:
         held = env.scene[held_cfg.name]
-        held_z = (wp.to_torch(held.data.root_pos_w)[:, 2] - env.scene.env_origins[:, 2])
+        robot = env.scene[robot_cfg.name]
+        origins = env.scene.env_origins
+        held_pos = wp.to_torch(held.data.root_pos_w) - origins
+        held_z = held_pos[:, 2]
         xy, gap = _align_and_gap(env, held_cfg, fixed_cfg, seat_off, held_base_z_off)
 
+        # Φ_grasp: flange approaches the held part (pre-lift only).
+        ee_idx = robot.data.body_names.index(ee_body)
+        ee_pos = wp.to_torch(robot.data.body_pos_w)[:, ee_idx] - origins
+        grasp_d = torch.norm(held_pos - (ee_pos - torch.tensor(
+            [0.0, 0.0, GRASP_Z_OFF], device=env.device)), dim=-1)
+        phi_grasp = torch.clamp(1.0 - grasp_d / GRASP_DIST0, 0.0, 1.0)
+
+        phi_xy = torch.clamp(1.0 - xy / ALIGN_DIST0, 0.0, 1.0)
+        phi_depth = torch.clamp(1.0 - gap / partial_socket_h, 0.0, 1.0)
+
+        lifted = (held_z - stand_z) > lift_clear
+        engaged = (xy < align_tol) & (gap < engage_gap)
+        success = part_seated(env, held_cfg, fixed_cfg, seat_off, held_base_z_off,
+                              align_tol, seat_tol)
+
+        # Nut: accumulate |Δyaw| while engaged -> Φ_thread + first-turn milestone.
+        is_nut = family == "nut_thread"
+        thread_start = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+        if is_nut:
+            yaw = _yaw_z(wp.to_torch(held.data.root_quat_w))
+            delta = (yaw - self._prev_yaw + torch.pi) % (2.0 * torch.pi) - torch.pi
+            self._turns = self._turns + torch.where(
+                engaged & self._yaw_valid, delta.abs(), torch.zeros_like(delta))
+            self._prev_yaw = yaw
+            self._yaw_valid = self._yaw_valid | engaged
+            thread_start = self._turns > THREAD_START_RAD
+            phi_thread = torch.clamp(self._turns / THREAD_TARGET_RAD, 0.0, 1.0)
+        else:
+            phi_thread = torch.zeros(env.num_envs, device=env.device)
+
         states = {
-            "grasped": _grasped(env, held_cfg, robot_cfg, ee_body, gripper_joint),
-            "lifted": (held_z - stand_z) > lift_clear,
-            "engaged": (xy < align_tol) & (gap < engage_gap),
-            "success": part_seated(env, held_cfg, fixed_cfg, seat_off, held_base_z_off,
-                                   align_tol, seat_tol),
+            "lifted": lifted,
+            "engaged": engaged,
+            "thread_start": thread_start if is_nut else torch.zeros_like(lifted),
+            "success": success,
         }
-        weights = {"grasped": W_GRASP, "lifted": W_LIFT, "engaged": W_ENGAGE, "success": W_SUCCESS}
+        weights = {
+            "lifted": W_LIFT,
+            "engaged": W_ENGAGE,
+            "thread_start": W_THREAD_START,
+            "success": W_SUCCESS,
+        }
 
         r = torch.zeros(env.num_envs, device=env.device)
         for k in MILESTONES:
@@ -131,13 +170,31 @@ class staged_assembly_reward(ManagerTermBase):
             r += weights[k] * newly.float()
             self._fired[k] |= states[k]
 
-        # Continuous partial credit: reward only positive gains in best depth.
-        pc = torch.clamp(1.0 - gap / partial_socket_h, 0.0, 1.0)
-        r += W_PARTIAL * torch.clamp(pc - self._best_pc, min=0.0)
-        self._best_pc = torch.maximum(self._best_pc, pc)
+        # Continuous: grasp approach until lift fires; seat approach after.
+        pre_lift = ~self._fired["lifted"]
+        dg = torch.clamp(phi_grasp - self._best_grasp, min=0.0)
+        r += W_GRASP_PC * dg * pre_lift.float()
+        self._best_grasp = torch.where(pre_lift, torch.maximum(self._best_grasp, phi_grasp),
+                                       self._best_grasp)
 
-        # The RewardManager scales every term by weight*dt; undo dt so the
-        # once-fired payouts are absolute amounts, not per-second rates.
+        post_lift = self._fired["lifted"]
+        dxy = torch.clamp(phi_xy - self._best_xy, min=0.0)
+        dd = torch.clamp(phi_depth - self._best_depth, min=0.0)
+        r += (W_ALIGN_PC * dxy + W_DEPTH_PC * dd) * post_lift.float()
+        self._best_xy = torch.where(post_lift, torch.maximum(self._best_xy, phi_xy),
+                                    self._best_xy)
+        self._best_depth = torch.where(post_lift, torch.maximum(self._best_depth, phi_depth),
+                                       self._best_depth)
+
+        # Nut thread densify after engage (turns on bolt; depth already covered above).
+        if is_nut:
+            on_bolt = self._fired["engaged"]
+            dt = torch.clamp(phi_thread - self._best_thread, min=0.0)
+            r += W_THREAD_PC * dt * on_bolt.float()
+            self._best_thread = torch.where(
+                on_bolt, torch.maximum(self._best_thread, phi_thread), self._best_thread)
+
+        # RewardManager scales by weight*dt; undo dt so payouts are absolute.
         return r / env.step_dt
 
 
@@ -147,10 +204,9 @@ class AssemblyRewardsCfg:
 
 
 def build_rewards_cfg(variant: AssemblyVariant, held, fixed, robot_name: str = "robot",
-                      ee_body: str = "base_link", gripper_joint: str = "finger_joint"
-                      ) -> AssemblyRewardsCfg:
-    """The staged reward term wired to a variant's seat geometry. ``weight=1.0``
-    (per-milestone weights live in the term; dt is undone inside it)."""
+                      ee_body: str = "base_link") -> AssemblyRewardsCfg:
+    """Staged reward wired to a variant's seat geometry. ``weight=1.0``
+    (per-term weights live inside; dt is undone there)."""
     return AssemblyRewardsCfg(staged=RewardTermCfg(
         func=staged_assembly_reward,
         weight=1.0,
@@ -167,6 +223,6 @@ def build_rewards_cfg(variant: AssemblyVariant, held, fixed, robot_name: str = "
             "partial_socket_h": variant.partial_socket_h,
             "stand_z": TABLE_TOP_Z,
             "ee_body": ee_body,
-            "gripper_joint": gripper_joint,
+            "family": variant.family,
         },
     ))
