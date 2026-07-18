@@ -35,7 +35,21 @@ sim = env.gym(make_env)
 
 
 @env.template(id="assembly")
-async def assembly(task: str = "peg_round_8mm_tight", seed: int = 0):
-    """One assembly episode on the built scene."""
-    yield {"prompt": await sim.reset(task=task, seed=seed)}
+async def assembly(
+    task: str = "peg_round_8mm_tight",
+    seed: int = 0,
+    num_envs: int | None = None,
+    embodiment: str | None = None,
+    reward: str | None = None,
+):
+    """One assembly episode. Env-defining args rebuild the scene when they change."""
+    # Only forward overrides; None keeps the process-launch defaults (ASSEMBLY_*).
+    reset_kw = {"task": task, "seed": seed}
+    if num_envs is not None:
+        reset_kw["num_envs"] = num_envs
+    if embodiment is not None:
+        reset_kw["embodiment"] = embodiment
+    if reward is not None:
+        reset_kw["reward"] = reward
+    yield {"prompt": await sim.reset(**reset_kw)}
     yield await sim.result()

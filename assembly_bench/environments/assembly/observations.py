@@ -20,3 +20,15 @@ def arm_joint_vel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntit
     robot = env.scene[asset_cfg.name]
     joint_indices = [i for i, name in enumerate(robot.data.joint_names) if name in _PANDA_JOINTS]
     return wp.to_torch(robot.data.joint_vel)[:, joint_indices]
+
+
+def part_pose(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Privileged root pose: env-local xyz + world xyzw quat -> (N, 7).
+
+    For the PA-RL critic only (not the VLA). Pos is origin-subtracted so it
+    matches recorded eef_pos; quat is Isaac's native xyzw.
+    """
+    asset = env.scene[asset_cfg.name]
+    pos = wp.to_torch(asset.data.root_pos_w) - env.scene.env_origins
+    quat = wp.to_torch(asset.data.root_quat_w)  # xyzw
+    return torch.cat([pos, quat], dim=-1)

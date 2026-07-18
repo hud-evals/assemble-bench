@@ -52,6 +52,22 @@ features = {
     "action": {"dtype": "float32", "shape": (8,), "names": None},                 # 7 joint targets + gripper
 }
 
+# Probe first HDF5 for optional PA-RL fields (reward + privileged poses).
+_probe_files = sorted(glob.glob(args.glob))
+_has_reward = _has_poses = False
+if _probe_files:
+    with h5py.File(_probe_files[0], "r") as _h:
+        _d0 = next((k for k in _h["data"] if k.startswith("demo_")), None)
+        if _d0 is not None:
+            _has_reward = "reward" in _h["data"][_d0]
+            _has_poses = "held_part_pose" in _h["data"][_d0]["obs"]
+if _has_poses:
+    features["observation.held_part_pose"] = {"dtype": "float32", "shape": (7,), "names": None}
+    features["observation.fixed_part_pose"] = {"dtype": "float32", "shape": (7,), "names": None}
+if _has_reward:
+    features["next.reward"] = {"dtype": "float32", "shape": (1,), "names": None}
+print(f"[convert] optional fields: reward={_has_reward} privileged_poses={_has_poses}", flush=True)
+
 # H.264 at a sharper CRF than the AV1 default (lerobot 0.6.0 RGBEncoderConfig).
 ds = LeRobotDataset.create(args.repo_id, fps=args.fps, features=features, root=out_root,
                            use_videos=True, metadata_buffer_size=1,
@@ -76,8 +92,11 @@ for hdf5 in files:
             eef_quat = o["eef_quat"][:].astype(np.float32)
             action = data[k]["action"][:].astype(np.float32)
             wrist, front = o["wrist_rgb"][:], o["front_rgb"][:]
+            held = o["held_part_pose"][:].astype(np.float32) if "held_part_pose" in o else None
+            fixed = o["fixed_part_pose"][:].astype(np.float32) if "fixed_part_pose" in o else None
+            reward = data[k]["reward"][:].astype(np.float32) if "reward" in data[k] else None
             for t in range(len(state)):
-                ds.add_frame({
+                frame = {
                     "observation.images.front": front[t],
                     "observation.images.wrist": wrist[t],
                     "observation.state": state[t],
@@ -86,7 +105,13 @@ for hdf5 in files:
                     "observation.eef_quat": eef_quat[t],
                     "action": action[t],
                     "task": task,
-                })
+                }
+                if held is not None:
+                    frame["observation.held_part_pose"] = held[t]
+                    frame["observation.fixed_part_pose"] = fixed[t]
+                if reward is not None:
+                    frame["next.reward"] = np.asarray([reward[t]], dtype=np.float32)
+                ds.add_frame(frame)
             ds.save_episode()
         print(f"wrote {len(demo_keys)} episodes from {os.path.basename(hdf5)}", flush=True)
 

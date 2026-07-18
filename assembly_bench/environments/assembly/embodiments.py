@@ -37,12 +37,12 @@ import os
 import tempfile
 from typing import Any
 
-from isaaclab.managers import ObservationTermCfg as ObsTerm
+from isaaclab.managers import ObservationTermCfg as ObsTerm, SceneEntityCfg
 
 from isaaclab_arena.assets.register import register_asset
 from isaaclab_arena.embodiments.droid.droid import DroidAbsoluteJointPositionEmbodiment
 
-from assembly_bench.environments.assembly.observations import arm_joint_vel
+from assembly_bench.environments.assembly.observations import arm_joint_vel, part_pose
 
 # Robotiq 2F-85 mimic-joint prims (relative to the flattened DROID asset) and
 # the PhysX penalty-spring axis each one couples.
@@ -133,6 +133,11 @@ def apply_assembly_droid_tuning(embodiment: Any) -> None:
     # Joint velocities alongside joint positions in the policy obs (recorded to
     # HDF5 via the flat policy-obs recorder term).
     embodiment.observation_config.policy.joint_vel = ObsTerm(func=arm_joint_vel)
+    # Privileged part poses for the PA-RL critic (not fed to the VLA).
+    embodiment.observation_config.policy.held_part_pose = ObsTerm(
+        func=part_pose, params={"asset_cfg": SceneEntityCfg("held_part")})
+    embodiment.observation_config.policy.fixed_part_pose = ObsTerm(
+        func=part_pose, params={"asset_cfg": SceneEntityCfg("fixed_part")})
 
 
 @register_asset

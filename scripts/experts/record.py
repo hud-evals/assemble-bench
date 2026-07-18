@@ -1,13 +1,10 @@
-"""Success-filtered HDF5 recorder for the scripted experts.
+"""HDF5 recorder for the scripted experts.
 
 Accumulates the VLA modality per control tick (wrist + front RGB at DROID-RLDS
-320x180, DROID proprio, the 8-D joint action), one buffer per env. On terminate
-(IsaacLab auto-reset), a successful buffer is written immediately and recording
-re-arms for the next episode in the same wave. state = [joint_pos(7),
-gripper_pos(1)] (pi0.5-DROID contract), plus joint_vel(7), eef_pos(3, env-local
-base-frame XYZ) and eef_quat(4, world WXYZ); action = [7 joint targets, gripper].
-Consumed by
-util/convert_lerobot.py (in the ``vla`` env).
+320x180, DROID proprio, the 8-D joint action), plus optional staged reward and
+privileged part poses for PA-RL critic pretrain. One buffer per env. On
+terminate (IsaacLab auto-reset), a finished buffer is written (success-only by
+default; ``keep_failures`` keeps every completed episode).
 """
 
 import os
@@ -22,6 +19,11 @@ import torch.nn.functional as F
 # downscale; the downscale also anti-aliases residual RTX grain.
 IMG_H, IMG_W = 180, 320
 
+# Obs keys always written (images + proprio + action).
+_BASE_OBS = ("wrist_rgb", "front_rgb", "state", "joint_vel", "eef_pos", "eef_quat")
+# Optional privileged / reward fields (written when present on the frame).
+_OPT_OBS = ("held_part_pose", "fixed_part_pose")
+
 
 def _imgs(obs_cam, key):
     """(N,H,W,C) uint8 tensor -> (N,180,320,3) uint8 numpy (area downscale)."""
@@ -32,16 +34,18 @@ def _imgs(obs_cam, key):
 
 class Recorder:
     """One HDF5 file, appended across waves. Call ``step`` after every env.step
-    and ``flush`` at each wave end to write that wave's successful episodes."""
+    and ``flush`` at each wave end to write that wave's finished episodes."""
 
-    def __init__(self, base, out_path, task_id, instruction, max_demos=None):
+    def __init__(self, base, out_path, task_id, instruction, max_demos=None,
+                 keep_failures=False):
         self.base = base
         self.out = out_path
         self.task_id = task_id
         self.instruction = instruction
         self.max_demos = max_demos
+        self.keep_failures = keep_failures
         self.N = base.num_envs
-        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
         self.h = h5py.File(out_path, "a")
         if "data" in self.h:
             self.g = self.h["data"]
@@ -61,13 +65,14 @@ class Recorder:
         self.buf = [[] for _ in range(self.N)]      # per-env list of frame dicts
         self.wave_demos = 0
 
-    def step(self, obs, action, done, success):
+    def step(self, obs, action, done, success, reward=None):
         """Append one recorded frame per env; on done commit + re-arm.
 
         IsaacLab auto-resets a slot on terminate (obs is already post-reset) and
         the expert restarts its phase machine for a new episode in the same
         wave. The done-step obs belongs to the NEXT episode -- don't glue it
-        onto the finished demo (same boundary rule as ``hud.wrap``).
+        onto the finished demo (same boundary rule as ``hud.wrap``). Terminal
+        reward is folded into the last pre-reset frame when present.
         """
         cam = obs["camera_obs"]
         wrist = _imgs(cam, "wrist_camera_rgb")
@@ -89,30 +94,65 @@ class Recorder:
         act = action.detach().cpu().numpy().astype(np.float32)
         done = done.cpu().numpy()
         success = success.cpu().numpy()
+        rew = None if reward is None else np.asarray(
+            reward.detach().cpu() if torch.is_tensor(reward) else reward, dtype=np.float32)
+        # Privileged poses (env-local xyz + xyzw) when the embodiment exposes them.
+        held = f32("held_part_pose") if "held_part_pose" in pol else None
+        fixed = f32("fixed_part_pose") if "fixed_part_pose" in pol else None
+
         for i in range(self.N):
             frame = {"wrist_rgb": wrist[i], "front_rgb": front[i],
                      "state": state[i], "joint_vel": joint_vel[i],
                      "eef_pos": eef_pos[i], "eef_quat": eef_quat[i],
                      "action": act[i]}
+            if held is not None:
+                frame["held_part_pose"] = held[i]
+            if fixed is not None:
+                frame["fixed_part_pose"] = fixed[i]
+            if rew is not None:
+                frame["reward"] = np.float32(rew[i])
             if done[i]:
+                # Terminal reward belongs to the last pre-reset action.
+                if self.buf[i] and rew is not None:
+                    self.buf[i][-1]["reward"] = np.float32(
+                        self.buf[i][-1].get("reward", 0.0) + float(rew[i]))
                 below_limit = self.max_demos is None or self.n_demos < self.max_demos
-                if bool(success[i]) and self.buf[i] and below_limit:
-                    self._write_demo(self.buf[i])
+                keep = bool(success[i]) or self.keep_failures
+                if keep and self.buf[i] and below_limit:
+                    self._write_demo(self.buf[i], success=bool(success[i]))
                 self.buf[i] = [frame]  # post-reset frame starts the next episode
             else:
                 self.buf[i].append(frame)
 
-    def _write_demo(self, frames):
+    def _write_demo(self, frames, *, success):
         d = self.g.create_group(f"demo_{self.n_demos}")
-        d.attrs["success"] = True
+        d.attrs["success"] = bool(success)
         o = d.create_group("obs")
-        for k in ("wrist_rgb", "front_rgb", "state", "joint_vel", "eef_pos", "eef_quat"):
+        for k in _BASE_OBS:
             o.create_dataset(k, data=np.stack([f[k] for f in frames]),
                              compression="gzip", compression_opts=4)
+        for k in _OPT_OBS:
+            if k in frames[0]:
+                o.create_dataset(k, data=np.stack([f[k] for f in frames]),
+                                 compression="gzip", compression_opts=4)
         d.create_dataset("action", data=np.stack([f["action"] for f in frames]))
+        if "reward" in frames[0]:
+            d.create_dataset("reward", data=np.asarray(
+                [f.get("reward", 0.0) for f in frames], dtype=np.float32))
         self.n_demos += 1
         self.wave_demos += 1
         self.g.attrs["num_demos"] = self.n_demos
+        self.h.flush()  # kill-safe: land demos on disk each commit
+
+    def commit_open(self):
+        """Write any still-open buffers as failures (wave ended without env done)."""
+        if not self.keep_failures:
+            return
+        for i in range(self.N):
+            below_limit = self.max_demos is None or self.n_demos < self.max_demos
+            if self.buf[i] and below_limit and len(self.buf[i]) > 1:
+                self._write_demo(self.buf[i], success=False)
+            self.buf[i] = []
 
     def flush(self):
         """Return demos committed this wave, then reset buffers for the next."""

@@ -100,7 +100,9 @@ with SimulationAppContext(args_cli):
     parser.add_argument("--record", type=str, default=None,
                         help="write success-filtered episodes to this HDF5 (for LeRobot export)")
     parser.add_argument("--max_demos", type=int, default=None,
-                        help="stop after this many successful demos are recorded (bulk data-gen)")
+                        help="stop after this many demos are recorded (bulk data-gen)")
+    parser.add_argument("--keep_failures", action="store_true",
+                        help="record failed episodes too (default: success-filtered)")
     parser.add_argument("--stream", action="store_true",
                         help="force HUD trace streaming even during a --record run (default: "
                              "streaming is ON for interactive runs, OFF for --record so bulk "
@@ -274,6 +276,7 @@ with SimulationAppContext(args_cli):
         Recorder(
             base, args_cli.record, args_cli.task, variant.instruction,
             max_demos=args_cli.max_demos,
+            keep_failures=args_cli.keep_failures,
         )
         if args_cli.record else None
     )
@@ -342,11 +345,11 @@ with SimulationAppContext(args_cli):
                 action[:, 7:],
             ], dim=-1)
             action = torch.where(finished_once.unsqueeze(-1), hold, action)
-            obs, _, terminated, truncated, _ = env.step(action)
+            obs, rew, terminated, truncated, _ = env.step(action)
             succ_now = base.termination_manager.get_term("success")
             done_now = terminated | truncated
             if recorder is not None:
-                recorder.step(obs, action, done_now, succ_now)
+                recorder.step(obs, action, done_now, succ_now, reward=rew)
             if done_now.any() and getattr(env, "_rec", None) is not None:
                 env._rec.record_indices = [
                     i for i in env._rec.record_indices if not bool(done_now[i])
@@ -464,7 +467,11 @@ with SimulationAppContext(args_cli):
                           flush=True)
             if bool(wave_complete.all()):
                 break
-        kept = recorder.flush() if recorder is not None else 0
+        if recorder is not None:
+            recorder.commit_open()  # keep_failures: bank slots that ended without env done
+            kept = recorder.flush()
+        else:
+            kept = 0
         print(f"[expert] wave {wave}: seated {int(succ_ever.sum())}/{base.num_envs}"
               f"{f' recorded {kept} (total {recorder.n_demos})' if recorder else ''}", flush=True)
         if args_cli.debug_fail:

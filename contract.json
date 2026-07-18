@@ -57,6 +57,28 @@
       "shape": [4],
       "names": ["eef_quat.w", "eef_quat.x", "eef_quat.y", "eef_quat.z"]
     },
+    "policy/held_part_pose": {
+      "role": "observation",
+      "dtype": "float32",
+      "units": "mixed",
+      "shape": [7],
+      "names": [
+        "held.pos.x", "held.pos.y", "held.pos.z",
+        "held.quat.x", "held.quat.y", "held.quat.z", "held.quat.w"
+      ],
+      "comment": "Privileged critic state: env-local xyz + world xyzw"
+    },
+    "policy/fixed_part_pose": {
+      "role": "observation",
+      "dtype": "float32",
+      "units": "mixed",
+      "shape": [7],
+      "names": [
+        "fixed.pos.x", "fixed.pos.y", "fixed.pos.z",
+        "fixed.quat.x", "fixed.quat.y", "fixed.quat.z", "fixed.quat.w"
+      ],
+      "comment": "Privileged critic state: env-local xyz + world xyzw"
+    },
     "action.arm_joint_pos": {
       "role": "action",
       "state_type": "JOINT_ABS_POS",

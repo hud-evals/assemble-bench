@@ -75,6 +75,20 @@
         "eef_quat_3"
       ]
     },
+    "policy/held_part_pose": {
+      "role": "observation",
+      "names": [
+        "held_pos_x", "held_pos_y", "held_pos_z",
+        "held_quat_x", "held_quat_y", "held_quat_z", "held_quat_w"
+      ]
+    },
+    "policy/fixed_part_pose": {
+      "role": "observation",
+      "names": [
+        "fixed_pos_x", "fixed_pos_y", "fixed_pos_z",
+        "fixed_quat_x", "fixed_quat_y", "fixed_quat_z", "fixed_quat_w"
+      ]
+    },
     "action": {
       "role": "action",
       "names": [
