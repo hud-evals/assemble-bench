@@ -3,11 +3,11 @@
 Ported from the source benchmark's full authored task matrix
 (``assembly/notes/TASK_MATRIX.md`` §2): the 16-instance peg-insert family
 (round/square x 4/8/12/16 mm x loose/tight), 3 gear-mesh sizes, and the
-8-instance nut-thread family (factory M8-M20 x loose/tight) — 27 variants.
-Each variant fully specifies the scene content (held / fixed / stand / extra
-assets and their poses) and the seat geometry that defines success. Kept free
-of Isaac imports so the CLI can list ``--task`` choices before the simulator
-app launches.
+8-instance nut-thread family (factory M8-M20 x loose/tight) — 27 variants,
+plus one DEBUG apple→bowl sanity check. Each variant fully specifies the scene
+content (held / fixed / stand / extra assets and their poses) and the seat
+geometry that defines success. Kept free of Isaac imports so the CLI can list
+``--task`` choices before the simulator app launches.
 """
 
 from dataclasses import dataclass
@@ -30,7 +30,7 @@ GEAR_SHAFT = {"small": 0.05075, "medium": 0.02025, "large": -0.03025}
 
 @dataclass(frozen=True)
 class AssemblyVariant:
-    family: str                       # "peg_insert" | "gear_mesh" | "nut_thread"
+    family: str                       # "peg_insert" | "gear_mesh" | "nut_thread" | "debug"
     instruction: str
     held: str                         # registered asset name of the grasped part
     fixed: str                        # registered asset name of the socket / base / bolt
@@ -150,3 +150,27 @@ def _nut(size: int, tolerance: str) -> AssemblyVariant:
 for _size in (8, 12, 16, 20):
     for _tol in ("loose", "tight"):
         VARIANTS[f"nut_m{_size}_{_tol}"] = _nut(_size, _tol)
+
+# ---------------------------------------------------------------------------
+# DEBUG ONLY — RoboLab apple→bowl. Not part of the NIST assembly matrix.
+# Prompt matches RoboLab's "Put the X in the Y" convention.
+# ---------------------------------------------------------------------------
+_APPLE_ORIGIN_ABOVE_BOTTOM = 0.0188   # scaled apple_01 AABB
+_BOWL_ORIGIN_ABOVE_BOTTOM = 0.0275    # YCB bowl AABB
+
+VARIANTS["debug"] = AssemblyVariant(
+    family="debug",
+    instruction="Put the apple in the bowl",
+    held="asm_debug_apple",
+    fixed="asm_debug_bowl",
+    held_pos=(*PEG_HELD_POS[:2], _APPLE_ORIGIN_ABOVE_BOTTOM),
+    fixed_pos=(*PEG_FIXED_POS[:2], _BOWL_ORIGIN_ABOVE_BOTTOM),
+    seat_off=(0.0, 0.0, 0.02),   # apple resting inside the bowl
+    align_tol=0.05,              # within the bowl rim (~8 cm radius)
+    seat_tol=0.04,
+    rand_xy=0.03,
+    rand_fixed_xy=0.02,
+    held_friction=1.0,
+    fixed_friction=0.6,
+    episode_length_s=32.0,
+)

@@ -25,7 +25,9 @@ OPEN, CLOSE = 0.0, 1.0
 NUT_HEIGHT = {8: 0.0065, 12: 0.010, 16: 0.013, 20: 0.016}
 # Fallback only; make_machine sets transport height above the bolt tip.
 SAFE_BASE_Z = 0.070
-ALIGN_CLEARANCE = 0.004
+# Hover just above the tip before engage. M20's large hex + tall tip perch
+# nearer ~2.5 mm (analytical tip vs SDF contact); 4 mm fights the perch.
+ALIGN_CLEARANCE = {8: 0.004, 12: 0.004, 16: 0.004, 20: 0.0025}
 # Capture the thread mouth, not merely its neighbourhood. With an 0.8 mm gate,
 # the first helix stroke was consumed approaching the tip and left no thread
 # depth to support the nut during release.
@@ -66,6 +68,7 @@ def make_machine(base, servo, *, size, aim_off=None, lead_phase_off=None, seed=N
     regrasp_sink = REGRASP_SINK[size]
     release_min_depth = RELEASE_MIN_DEPTH[size]
     turn_angle = TURN_ANGLE[size]
+    align_clearance = ALIGN_CLEARANCE[size]
     # Small nuts need a firmer lead press to catch the first flank.
     lead_depth = LEAD_DEPTH if size >= 12 else LEAD_DEPTH + 0.0005
 
@@ -125,7 +128,8 @@ def make_machine(base, servo, *, size, aim_off=None, lead_phase_off=None, seed=N
     # The generated loose M8 groove has only ~0.06 mm radial crest clearance.
     # Pause the turn whenever contact pushes farther off-axis, recenter, then
     # continue; advancing an open-loop wrist target guarantees a flank clash.
-    thread_xy_tol = min(0.0005, 0.03 * size / 1000.0)
+    # M20 needs a wider align/thread gate — tip contact leaves ~0.9 mm residual.
+    thread_xy_tol = min(0.0012 if size >= 20 else 0.0005, 0.06 * size / 1000.0)
     engage_xy_tol = max(0.0005, 0.06 * size / 1000.0)
     engage_tol = max(0.0006, 0.075 * size / 1000.0)
     force_limit = 5.0
@@ -222,10 +226,22 @@ def make_machine(base, servo, *, size, aim_off=None, lead_phase_off=None, seed=N
         return p, hold_quat, CLOSE
 
     def t_align(m):
+        # Center XY; for M20 keep a soft Z hold once we are near the tip so we
+        # do not grind against the lead-in (that chatters and never settles).
         p = m.servo.ee() + (bolt_tip() - nut_base())
-        p[:, 2] = m.servo.ee()[:, 2] + (
-            bolt_tip()[:, 2] + ALIGN_CLEARANCE - nut_base()[:, 2]
-        )
+        desired_z = bolt_tip()[:, 2] + align_clearance
+        if size >= 20:
+            gap = nut_base()[:, 2] - bolt_tip()[:, 2]
+            near_tip = (gap > 0.0005) & (gap < 0.006)
+            # Hold current height when already perched; otherwise approach slowly.
+            dz = torch.where(
+                near_tip,
+                torch.zeros_like(gap),
+                torch.clamp(desired_z - nut_base()[:, 2], -0.002, 0.002),
+            )
+            p[:, 2] = m.servo.ee()[:, 2] + dz
+        else:
+            p[:, 2] = m.servo.ee()[:, 2] + (desired_z - nut_base()[:, 2])
         return p, hold_quat, CLOSE
 
     def enter_engage(m, ids):
@@ -458,9 +474,11 @@ def make_machine(base, servo, *, size, aim_off=None, lead_phase_off=None, seed=N
         gap = nut_base()[:, 2] - bolt_tip()[:, 2]
         # Tall bolts (M20) leave less IK headroom; allow a wider z band.
         z_tol = 0.0025 if size >= 20 else 0.0015
+        xy_tol = max(0.0015 if size >= 20 else 0.0008, thread_xy_tol)
+        # M20 tip contact chatters at ~55 mm/s forever — don't gate on speed.
         return (
-            (xy_err(nut_base(), bolt_tip()) < max(0.0008, thread_xy_tol))
-            & ((gap - ALIGN_CLEARANCE).abs() < z_tol)
+            (xy_err(nut_base(), bolt_tip()) < xy_tol)
+            & ((gap - align_clearance).abs() < z_tol)
             & (nut_upright() > 0.95)
         )
 
@@ -563,7 +581,10 @@ def make_machine(base, servo, *, size, aim_off=None, lead_phase_off=None, seed=N
               on_enter=enter_lift),
         Phase("transport", t_transport, lambda m: xy_err(nut_base(), bolt_tip()) < 0.002,
               timeout=120, pos_cap=0.035),
-        Phase("align", t_align, aligned, timeout=140, pos_cap=0.03, zcap=0.4),
+        # M20: slow the tip approach — a fast zcap slams the hex onto the
+        # lead and leaves a vibrating 0.9 mm XY residual that never gates.
+        Phase("align", t_align, aligned, timeout=180 if size >= 20 else 140,
+              pos_cap=0.03, zcap=0.08 if size >= 20 else 0.4),
         Phase("engage", t_engage, engaged, timeout=80, zcap=0.1,
               on_enter=enter_engage),
         # Catch the first flank before ratcheting: sweep the wrist under a

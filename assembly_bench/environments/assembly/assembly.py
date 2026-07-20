@@ -152,6 +152,18 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
         parts = [a for a in (held, fixed, stand, *extras) if a is not None]
         scene = Scene(assets=[background, light, *parts])
 
+        # Privileged part poses on the wire (policy/held_part_pose, policy/
+        # fixed_part_pose) for the PA-RL critic; policy adapters ignore them.
+        from isaaclab.managers import ObservationTermCfg as ObsTerm
+        from isaaclab.managers import SceneEntityCfg
+
+        from assembly_bench.environments.assembly.observations import asset_root_pose
+
+        embodiment.observation_config.policy.held_part_pose = ObsTerm(
+            func=asset_root_pose, params={"asset_cfg": SceneEntityCfg("held_part")})
+        embodiment.observation_config.policy.fixed_part_pose = ObsTerm(
+            func=asset_root_pose, params={"asset_cfg": SceneEntityCfg("fixed_part")})
+
         task = NISTAssemblyTask(variant=variant, held=held, fixed=fixed, stand=stand, extras=extras,
                                 reward_mode=getattr(args_cli, "reward", None))
 

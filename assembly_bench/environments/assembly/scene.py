@@ -128,3 +128,42 @@ for _s in (8, 12, 16, 20):
                   impulse_cap=GEAR_NUT_IMPULSE_CAP)
 _register("asm_nist_board", str(PARTS_DIR / "nist_gmc_base.usd"),
           mass=1.0, impulse_cap=GEAR_NUT_IMPULSE_CAP, kinematic=True)
+
+# DEBUG ONLY — RoboLab apple/bowl for a policy sanity-check pick-and-place.
+# Not part of the NIST assembly matrix. Apple is Objaverse (~100x oversized).
+DEBUG_DIR = PARTS_DIR / "debug"
+
+
+@register_asset
+class AsmDebugApple(LibraryObject):
+    """DEBUG: RoboLab ``apple_01`` (scaled to ~7 cm)."""
+
+    name = "asm_debug_apple"
+    tags = ["object", "debug"]
+    usd_path = str(DEBUG_DIR / "apple_01.usd")
+    object_type = ObjectType.RIGID
+    scale = (0.01, 0.01, 0.01)
+    spawn_cfg_addon = {
+        "rigid_props": RIGID_BODY_PROPS_HIGH_PRECISION,
+        "mass_props": sim_utils.MassPropertiesCfg(mass=0.15),
+        "collision_props": sim_utils.CollisionPropertiesCfg(contact_offset=0.005, rest_offset=0.0),
+    }
+
+
+@register_asset
+class AsmDebugBowl(LibraryObject):
+    """DEBUG: RoboLab YCB bowl (kinematic receptacle)."""
+
+    name = "asm_debug_bowl"
+    tags = ["object", "debug"]
+    usd_path = str(DEBUG_DIR / "bowl.usd")
+    object_type = ObjectType.RIGID
+    spawn_cfg_addon = {
+        "rigid_props": sim_utils.RigidBodyPropertiesCfg(
+            kinematic_enabled=True, disable_gravity=True,
+            max_depenetration_velocity=5.0,
+            solver_position_iteration_count=16, solver_velocity_iteration_count=1,
+        ),
+        "mass_props": sim_utils.MassPropertiesCfg(mass=0.2),
+        "collision_props": sim_utils.CollisionPropertiesCfg(contact_offset=0.005, rest_offset=0.0),
+    }

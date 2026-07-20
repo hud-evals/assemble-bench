@@ -1,4 +1,11 @@
-"""pi0.5 DROID agent for the assembly benchmark."""
+"""pi0.5 DROID agent pointing at an assembly_bench SFT checkpoint.
+
+SFT was trained with ``--use_relative_actions``; the saved postprocessor already
+runs ``absolute_actions_processor`` (enabled), so ``adapt_chunk`` only slices to
+8-D and binarizes the gripper — it must NOT re-add joint position.
+"""
+
+import os
 
 import numpy as np
 import torch
@@ -7,11 +14,14 @@ from lerobot.policies.pi05.modeling_pi05 import PI05Policy, resize_with_pad_torc
 
 from hud.agents.robot import Adapter, LeRobotModel, RobotAgent
 
-CHECKPOINT = "DAVIAN-Robotics/pi05_droid_jointpos"
+# Override with CHECKPOINT=/path/to/merged_sft
+CHECKPOINT = os.environ.get(
+    "CHECKPOINT", os.path.expanduser("~/checkpoints/pi05_assembly_bench_2_sft_20k")
+)
 IMAGE_SIZE = 224
 
 
-class AssemblyDroidAdapter(Adapter):
+class AssemblySftAdapter(Adapter):
     def __init__(self, model_image_keys: list[str], state_dim: int) -> None:
         super().__init__(model_image_keys=model_image_keys)
         self.state_dim = state_dim
@@ -29,29 +39,17 @@ class AssemblyDroidAdapter(Adapter):
             batch[key] = image.reshape(IMAGE_SIZE, IMAGE_SIZE, 3).permute(2, 0, 1).float() / 255.0
         return batch
 
-    def _deltas_to_env(self, action: np.ndarray, obs: dict) -> np.ndarray:
-        """DAVIAN pads to 32-D joint *deltas*; env wants 8-D absolute targets."""
-        a = np.asarray(action[..., :8], dtype=np.float32).copy()
-        a[..., :7] += obs["data"]["policy/joint_pos"]
-        a[..., 7] = a[..., 7] > 0.5
-        return a
-
     def adapt_chunk(self, chunk: np.ndarray, obs: dict) -> np.ndarray:
-        # Project RobotAgent: convert once here, then adapt_action is a no-op.
-        return self._deltas_to_env(chunk, obs)
-
-    def adapt_action(self, action: np.ndarray, obs: dict) -> np.ndarray:
-        # Older agents only call this (raw 32-D pops). Never re-add joints to an
-        # already-converted 8-D absolute chunk — that double-integrates and flails.
-        action = np.asarray(action)
-        if action.shape[-1] <= 8:
-            return action
-        return self._deltas_to_env(action, obs)
+        # Postprocessor already made arm joints absolute; only binarize gripper.
+        actions = np.asarray(chunk[:, :8], dtype=np.float32)
+        actions[:, 7] = actions[:, 7] > 0.5
+        return actions
 
 
-class Pi05DroidAgent(RobotAgent):
+class Pi05AssemblySftAgent(RobotAgent):
     def __init__(self) -> None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
+        print(f"[agent] loading SFT checkpoint {CHECKPOINT}", flush=True)
         policy = PI05Policy.from_pretrained(CHECKPOINT).to(device).eval()
         preprocess, postprocess = make_pre_post_processors(
             policy.config,
@@ -60,10 +58,10 @@ class Pi05DroidAgent(RobotAgent):
         )
         policy.config.n_action_steps = 15
         self.model = LeRobotModel(policy, preprocess, postprocess)
-        self.adapter = AssemblyDroidAdapter(
+        self.adapter = AssemblySftAdapter(
             list(policy.config.image_features),
             int(policy.config.input_features["observation.state"].shape[0]),
         )
 
 
-Agent = Pi05DroidAgent
+Agent = Pi05AssemblySftAgent

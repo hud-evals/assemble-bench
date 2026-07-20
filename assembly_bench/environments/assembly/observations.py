@@ -22,13 +22,12 @@ def arm_joint_vel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntit
     return wp.to_torch(robot.data.joint_vel)[:, joint_indices]
 
 
-def part_pose(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch.Tensor:
-    """Privileged root pose: env-local xyz + world xyzw quat -> (N, 7).
+def asset_root_pose(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Env-local root pose of a scene asset: position(3) + quat xyzw(4).
 
-    For the PA-RL critic only (not the VLA). Pos is origin-subtracted so it
-    matches recorded eef_pos; quat is Isaac's native xyzw.
+    Privileged observation for the PA-RL critic (same convention as the
+    reward-labeled demo datasets: env-origin-relative position, xyzw quat).
     """
     asset = env.scene[asset_cfg.name]
     pos = wp.to_torch(asset.data.root_pos_w) - env.scene.env_origins
-    quat = wp.to_torch(asset.data.root_quat_w)  # xyzw
-    return torch.cat([pos, quat], dim=-1)
+    return torch.cat([pos, wp.to_torch(asset.data.root_quat_w)], dim=-1)
