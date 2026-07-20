@@ -4,7 +4,7 @@ Runs one variant with ``--reward staged``, accumulates per-env returns, and
 checks milestones / potentials against the expected success flow.
 
     /isaac-sim/python.sh scripts/experts/smoke_rewards.py \
-        --headless --task peg_round_8mm_loose --num_envs 4 \
+        --headless --task peg_round_M1_loose --num_envs 4 \
         --disable_cameras --no_stream --reward staged
 """
 
@@ -118,7 +118,7 @@ with SimulationAppContext(args_cli):
                 seat_off=variant.seat_off, seed=seed,
             )
         elif variant.family == "nut_thread":
-            size = int(args_cli.task.split("_")[1].removeprefix("m"))
+            size = int(args_cli.task.split("_")[1].lower().removeprefix("m"))
             machine = nut.make_machine(base, servo, size=size, seed=seed)
         else:
             raise NotImplementedError(variant.family)

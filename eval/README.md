@@ -1,8 +1,8 @@
 # Batch evaluation
 
-`assembly_all_variants.json` runs the whole benchmark — one job per variant,
-all 27 — through Arena's eval jobs runner
-(`isaaclab_arena/evaluation/eval_runner.py`), instead of 27 manual
+`assembly_all_variants.json` runs the whole benchmark — one job per variant
+(15 assembly + `debug`) — through Arena's eval jobs runner
+(`isaaclab_arena/evaluation/eval_runner.py`), instead of many manual
 `policy_runner.py` invocations.
 
 From `submodules/IsaacLab-Arena`:

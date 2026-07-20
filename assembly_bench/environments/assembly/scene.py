@@ -97,13 +97,12 @@ def _register(name: str, usd: str, *, mass: float | None = None, impulse_cap: fl
     ))
 
 
-# Peg family: 16 pegs (50 mm long, ~1 mm chamfer mouth) + 8 matching bores.
-# The bore doubles as the presentation stand the peg starts standing in.
+# Peg family: loose-clearance pegs (50 mm long, ~1 mm chamfer mouth) + matching
+# bores. The bore doubles as the presentation stand the peg starts standing in.
 for _size in (4, 8, 12, 16):
     for _stem in ("round", "rect"):
-        for _tol in ("loose", "tight"):
-            _register(f"asm_peg_{_stem}_{_size}mm_{_tol}",
-                      str(PARTS_DIR / f"gen_{_stem}_peg_{_size}mm_{_tol}.usd"), mass=0.019)
+        _register(f"asm_peg_{_stem}_{_size}mm_loose",
+                  str(PARTS_DIR / f"gen_{_stem}_peg_{_size}mm_loose.usd"), mass=0.019)
         _register(f"asm_hole_{_stem}_{_size}mm",
                   str(PARTS_DIR / f"gen_{_stem}_hole_{_size}mm.usd"), mass=0.05)
 
@@ -118,14 +117,13 @@ _register("asm_gear_base", f"{ASSET_DIR}/factory_gear_base.usd",
           mass=0.05, impulse_cap=GEAR_NUT_IMPULSE_CAP)
 
 # Nut family on the NIST GMC board: IsaacGymEnvs factory OBJs converted to USD
-# (SDF + brass/steel MDL). Procedural gen_* pairs do not SDF-mate for descent.
-# M4 omitted — pad geometry cannot grasp the 3.2 mm hex from the board.
+# (SDF + brass/steel MDL). Loose clearance only. Procedural gen_* pairs do not
+# SDF-mate for descent. M4 omitted — pad geometry cannot grasp the 3.2 mm hex.
 for _s in (8, 12, 16, 20):
-    for _t in ("loose", "tight"):
-        _register(f"asm_nut_m{_s}_{_t}", str(PARTS_DIR / f"factory_nut_m{_s}_{_t}.usd"),
-                  impulse_cap=GEAR_NUT_IMPULSE_CAP)
-        _register(f"asm_bolt_m{_s}_{_t}", str(PARTS_DIR / f"factory_bolt_m{_s}_{_t}.usd"),
-                  impulse_cap=GEAR_NUT_IMPULSE_CAP)
+    _register(f"asm_nut_m{_s}_loose", str(PARTS_DIR / f"factory_nut_m{_s}_loose.usd"),
+              impulse_cap=GEAR_NUT_IMPULSE_CAP)
+    _register(f"asm_bolt_m{_s}_loose", str(PARTS_DIR / f"factory_bolt_m{_s}_loose.usd"),
+              impulse_cap=GEAR_NUT_IMPULSE_CAP)
 _register("asm_nist_board", str(PARTS_DIR / "nist_gmc_base.usd"),
           mass=1.0, impulse_cap=GEAR_NUT_IMPULSE_CAP, kinematic=True)
 

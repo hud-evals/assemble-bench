@@ -24,7 +24,7 @@ _app = None
 
 
 def make_env(
-    task: str = "peg_round_8mm_tight",
+    task: str = "peg_round_M1_loose",
     num_envs: int = int(os.environ.get("ASSEMBLY_NUM_ENVS", "1")),
     embodiment: str = os.environ.get("ASSEMBLY_EMBODIMENT", "droid_abs_joint_pos_softmimic"),
     reward: str = os.environ.get("ASSEMBLY_REWARD", "none"),
@@ -50,13 +50,13 @@ env = Environment(name="assembly-bench")
 sim = env.gym(
     make_env,
     contract=Path(__file__).parent / "contract.json",
-    task="peg_round_8mm_tight",
+    task="peg_round_M1_loose",
 )
 
 
 @env.template(id="assembly")
 async def assembly(
-    task: str = "peg_round_8mm_tight",
+    task: str = "peg_round_M1_loose",
     seed: int = 0,
     num_envs: int | None = None,
     embodiment: str | None = None,

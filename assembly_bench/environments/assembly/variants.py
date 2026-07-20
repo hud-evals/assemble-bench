@@ -1,13 +1,11 @@
 """The benchmark manifest: NIST-taskboard assembly variants as pure data.
 
-Ported from the source benchmark's full authored task matrix
-(``assembly/notes/TASK_MATRIX.md`` §2): the 16-instance peg-insert family
-(round/square x 4/8/12/16 mm x loose/tight), 3 gear-mesh sizes, and the
-8-instance nut-thread family (factory M8-M20 x loose/tight) — 27 variants,
-plus one DEBUG apple→bowl sanity check. Each variant fully specifies the scene
-content (held / fixed / stand / extra assets and their poses) and the seat
-geometry that defines success. Kept free of Isaac imports so the CLI can list
-``--task`` choices before the simulator app launches.
+15 assembly variants (loose-clearance only) plus one DEBUG apple→bowl sanity
+check: peg-insert (round/square × S/M1/M2/L), gear-mesh (small/medium/large),
+and nut-thread (M8/M12/M16/M20). Each variant fully specifies the scene content
+(held / fixed / stand / extra assets and their poses) and the seat geometry that
+defines success. Kept free of Isaac imports so the CLI can list ``--task``
+choices before the simulator app launches.
 """
 
 from dataclasses import dataclass
@@ -23,6 +21,9 @@ TABLE_TOP_Z = 0.0
 PEG_FIXED_POS = (0.37, 0.07, TABLE_TOP_Z)     # insertion hole / gear base
 PEG_HELD_POS = (0.37, -0.07, TABLE_TOP_Z)     # presentation stand / free part
 NUT_BASE_TOP = TABLE_TOP_Z + 0.009            # NIST GMC board top surface
+
+# Peg suite size codes → stem diameter (mm). Assets stay named by mm.
+PEG_SIZE_MM = {"S": 4, "M1": 8, "M2": 12, "L": 16}
 
 # Gear shaft x-offsets from the gear-base root (re-centered gen_gear USDs).
 GEAR_SHAFT = {"small": 0.05075, "medium": 0.02025, "large": -0.03025}
@@ -58,14 +59,16 @@ class AssemblyVariant:
     episode_length_s: float = 32.0
 
 
-def _peg(size: int, geometry: str, tolerance: str) -> AssemblyVariant:
-    """One peg-insert instance. 'square' pegs are rectangular (USD stem 'rect'),
-    so they are not yaw-symmetric: the hole gets yaw jitter the policy must match."""
+def _peg(size_code: str, geometry: str) -> AssemblyVariant:
+    """One peg-insert instance (loose clearance). 'square' pegs are rectangular
+    (USD stem 'rect'), so they are not yaw-symmetric: the hole gets yaw jitter
+    the policy must match."""
+    size = PEG_SIZE_MM[size_code]
     stem = {"round": "round", "square": "rect"}[geometry]
     return AssemblyVariant(
         family="peg_insert",
         instruction=f"pick up the {size} mm {geometry} peg and insert it into the hole",
-        held=f"asm_peg_{stem}_{size}mm_{tolerance}",
+        held=f"asm_peg_{stem}_{size}mm_loose",
         fixed=f"asm_hole_{stem}_{size}mm",
         stand=f"asm_hole_{stem}_{size}mm",   # a second bore presents the peg upright
         held_pos=PEG_HELD_POS,
@@ -99,10 +102,9 @@ def _gear(size: str) -> AssemblyVariant:
 
 VARIANTS: dict[str, AssemblyVariant] = {}
 
-for _size in (4, 8, 12, 16):
+for _code in ("S", "M1", "M2", "L"):
     for _geom in ("round", "square"):
-        for _tol in ("loose", "tight"):
-            VARIANTS[f"peg_{_geom}_{_size}mm_{_tol}"] = _peg(_size, _geom, _tol)
+        VARIANTS[f"peg_{_geom}_{_code}_loose"] = _peg(_code, _geom)
 
 for _k in ("small", "medium", "large"):
     VARIANTS[f"gear_{_k}"] = _gear(_k)
@@ -112,7 +114,6 @@ for _k in ("small", "medium", "large"):
 # dims). The nut is authored at its assembled-start height, so its base sits
 # head_h above the root and rests on the board at z = board_top - head_h.
 NUTBOLT = {
-    4: dict(head_h=0.004, shank=0.016, pitch=0.0007),
     8: dict(head_h=0.008, shank=0.018, pitch=0.00125),
     12: dict(head_h=0.012, shank=0.02, pitch=0.00175),
     16: dict(head_h=0.010, shank=0.025, pitch=0.002),
@@ -120,17 +121,18 @@ NUTBOLT = {
 }
 
 
-def _nut(size: int, tolerance: str) -> AssemblyVariant:
-    """Thread the nut onto its bolt on the NIST GMC board. Success is only
-    reachable by helical threading (a straight push jams): nut base descends to
-    head_h + shank - 1.5*pitch, within pitch*0.375 (FORGE-faithful). The bolt +
-    board are pinned dead-center; only the nut jitters."""
+def _nut(size: int) -> AssemblyVariant:
+    """Thread the nut onto its bolt on the NIST GMC board (loose clearance).
+    Success is only reachable by helical threading (a straight push jams): nut
+    base descends to head_h + shank - 1.5*pitch, within pitch*0.375
+    (FORGE-faithful). The bolt + board are pinned dead-center; only the nut
+    jitters."""
     d = NUTBOLT[size]
     return AssemblyVariant(
         family="nut_thread",
         instruction=f"pick up the M{size} nut and thread it onto the bolt",
-        held=f"asm_nut_m{size}_{tolerance}",
-        fixed=f"asm_bolt_m{size}_{tolerance}",
+        held=f"asm_nut_m{size}_loose",
+        fixed=f"asm_bolt_m{size}_loose",
         held_pos=(0.30, 0.10, NUT_BASE_TOP - d["head_h"]),
         fixed_pos=(0.37, 0.0, NUT_BASE_TOP),
         extras=(("asm_nist_board", (0.0, 0.0, 0.0)),),
@@ -148,8 +150,7 @@ def _nut(size: int, tolerance: str) -> AssemblyVariant:
 
 # M4 dropped: 3.2 mm hex is below the Robotiq pad band when open on the board.
 for _size in (8, 12, 16, 20):
-    for _tol in ("loose", "tight"):
-        VARIANTS[f"nut_m{_size}_{_tol}"] = _nut(_size, _tol)
+    VARIANTS[f"nut_M{_size}"] = _nut(_size)
 
 # ---------------------------------------------------------------------------
 # DEBUG ONLY — RoboLab apple→bowl. Not part of the NIST assembly matrix.

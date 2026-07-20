@@ -1,6 +1,6 @@
 """Smoke-test the assembly env through HUD across placements.
 
-One short zero-action episode (peg_round_8mm_tight) per selected runtime:
+One short zero-action episode (peg_round_M1_loose) per selected runtime:
 
     python scripts/smoke_runtimes.py local    # LocalRuntime spawns env.py under the isaac6 python
     python scripts/smoke_runtimes.py docker   # DockerRuntime boots hud-assembly-env with --gpus
@@ -77,7 +77,7 @@ def make_runtime(kind: str):
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("runtime", choices=["local", "docker", "modal"])
-    parser.add_argument("--task", default="peg_round_8mm_tight")
+    parser.add_argument("--task", default="peg_round_M1_loose")
     args = parser.parse_args()
 
     task = Task(env="assembly-bench", id="assembly", slug=args.task,

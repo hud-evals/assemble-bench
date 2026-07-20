@@ -23,14 +23,14 @@ run_expert.py  (Isaac Sim, GPU)  ->  per-task HDF5  ->  convert_lerobot.py (vla 
 ```bash
 # inside the hud-assembly-env container, WORKDIR /app/assembly_bench
 /isaac-sim/python.sh scripts/experts/run_expert.py \
-  --headless --task peg_round_8mm_loose \
+  --headless --task peg_round_M1_loose \
   --num_envs 8 --waves 40 --max_demos 50 \
-  --record data/hdf5/peg_round_8mm_loose.hdf5
+  --record data/hdf5/peg_round_M1_loose.hdf5
 ```
 
 - `--task`: any key in `environments/assembly/variants.py::VARIANTS`
-  (`peg_{round,square}_{4,8,12,16}mm_{loose,tight}`, `gear_{small,medium,large}`,
-  `nut_m{8,12,16,20}_{loose,tight}`).
+  (`peg_{round,square}_{S,M1,M2,L}_loose`, `gear_{small,medium,large}`,
+  `nut_M{8,12,16,20}`, plus `debug`).
 - `--num_envs`: parallel envs (all recorded). `--waves`: reset cycles (each
   re-randomizes). `--max_demos N`: stop once N successful demos are banked.
 - Only **successful** episodes are written; the recorder **appends** across waves,

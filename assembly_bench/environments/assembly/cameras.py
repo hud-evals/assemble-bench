@@ -13,6 +13,7 @@ import numpy as np
 import isaaclab.sim as sim_utils
 from isaaclab.sensors import CameraCfg
 
+from isaaclab_arena.utils.cameras import ArenaCameraCfg
 from isaaclab_arena.utils.configclass import make_configclass
 
 # DROID intrinsics (2.8 mm focal, 5.376 x 3.024 mm aperture, ~88 x 57 deg FOV),
@@ -89,4 +90,6 @@ def make_assembly_camera_cfg(embodiment):
             cam.height, cam.width = RENDER_H, RENDER_W
             fields.append((name, CameraCfg, cam))
     fields.append(("front_cam", CameraCfg, front_camera()))
-    return make_configclass("AssemblyCameraCfg", fields)()
+    # Arena embodiments require camera_config to be an ArenaCameraCfg subclass
+    # (get_cfg() returns tiled/untiled). make_configclass defaults to no bases.
+    return make_configclass("AssemblyCameraCfg", fields, bases=(ArenaCameraCfg,))()

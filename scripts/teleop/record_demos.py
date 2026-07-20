@@ -17,11 +17,11 @@ Run (isaac env, repo root; browser client needs TCP 49100 + UDP 47998 open):
     PUBLIC_IP=$(curl -s ifconfig.me) OMNI_KIT_ACCEPT_EULA=YES \
     python scripts/teleop/record_demos.py \
       --livestream 1 --num_envs 1 --step_hz 15 \
-      --dataset_file data/teleop/peg_round_8mm_loose_dik_s001.hdf5 \
+      --dataset_file data/teleop/peg_round_M1_loose_dik_s001.hdf5 \
       --num_demos 10 \
       --external_environment_class_path \
         assembly_bench.environments.assembly.assembly:AssemblyBenchEnvironment \
-      assembly_bench --task peg_round_8mm_loose \
+      assembly_bench --task peg_round_M1_loose \
       --embodiment droid_differential_ik --teleop_device keyboard
 
 Keyboard (click the streamed viewport first): W/S A/D Q/E translate,

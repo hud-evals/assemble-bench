@@ -2,6 +2,15 @@
   {
     "env": "assembly-bench",
     "id": "assembly",
+    "slug": "debug",
+    "args": {
+      "task": "debug",
+      "seed": 0
+    }
+  },
+  {
+    "env": "assembly-bench",
+    "id": "assembly",
     "slug": "gear_large",
     "args": {
       "task": "gear_large",
@@ -29,216 +38,108 @@
   {
     "env": "assembly-bench",
     "id": "assembly",
-    "slug": "nut_m12_loose",
+    "slug": "nut_M12",
     "args": {
-      "task": "nut_m12_loose",
+      "task": "nut_M12",
       "seed": 0
     }
   },
   {
     "env": "assembly-bench",
     "id": "assembly",
-    "slug": "nut_m12_tight",
+    "slug": "nut_M16",
     "args": {
-      "task": "nut_m12_tight",
+      "task": "nut_M16",
       "seed": 0
     }
   },
   {
     "env": "assembly-bench",
     "id": "assembly",
-    "slug": "nut_m16_loose",
+    "slug": "nut_M20",
     "args": {
-      "task": "nut_m16_loose",
+      "task": "nut_M20",
       "seed": 0
     }
   },
   {
     "env": "assembly-bench",
     "id": "assembly",
-    "slug": "nut_m16_tight",
+    "slug": "nut_M8",
     "args": {
-      "task": "nut_m16_tight",
+      "task": "nut_M8",
       "seed": 0
     }
   },
   {
     "env": "assembly-bench",
     "id": "assembly",
-    "slug": "nut_m4_loose",
+    "slug": "peg_round_L_loose",
     "args": {
-      "task": "nut_m4_loose",
+      "task": "peg_round_L_loose",
       "seed": 0
     }
   },
   {
     "env": "assembly-bench",
     "id": "assembly",
-    "slug": "nut_m4_tight",
+    "slug": "peg_round_M1_loose",
     "args": {
-      "task": "nut_m4_tight",
+      "task": "peg_round_M1_loose",
       "seed": 0
     }
   },
   {
     "env": "assembly-bench",
     "id": "assembly",
-    "slug": "nut_m8_loose",
+    "slug": "peg_round_M2_loose",
     "args": {
-      "task": "nut_m8_loose",
+      "task": "peg_round_M2_loose",
       "seed": 0
     }
   },
   {
     "env": "assembly-bench",
     "id": "assembly",
-    "slug": "nut_m8_tight",
+    "slug": "peg_round_S_loose",
     "args": {
-      "task": "nut_m8_tight",
+      "task": "peg_round_S_loose",
       "seed": 0
     }
   },
   {
     "env": "assembly-bench",
     "id": "assembly",
-    "slug": "peg_round_12mm_loose",
+    "slug": "peg_square_L_loose",
     "args": {
-      "task": "peg_round_12mm_loose",
+      "task": "peg_square_L_loose",
       "seed": 0
     }
   },
   {
     "env": "assembly-bench",
     "id": "assembly",
-    "slug": "peg_round_12mm_tight",
+    "slug": "peg_square_M1_loose",
     "args": {
-      "task": "peg_round_12mm_tight",
+      "task": "peg_square_M1_loose",
       "seed": 0
     }
   },
   {
     "env": "assembly-bench",
     "id": "assembly",
-    "slug": "peg_round_16mm_loose",
+    "slug": "peg_square_M2_loose",
     "args": {
-      "task": "peg_round_16mm_loose",
+      "task": "peg_square_M2_loose",
       "seed": 0
     }
   },
   {
     "env": "assembly-bench",
     "id": "assembly",
-    "slug": "peg_round_16mm_tight",
+    "slug": "peg_square_S_loose",
     "args": {
-      "task": "peg_round_16mm_tight",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "peg_round_4mm_loose",
-    "args": {
-      "task": "peg_round_4mm_loose",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "peg_round_4mm_tight",
-    "args": {
-      "task": "peg_round_4mm_tight",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "peg_round_8mm_loose",
-    "args": {
-      "task": "peg_round_8mm_loose",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "peg_round_8mm_tight",
-    "args": {
-      "task": "peg_round_8mm_tight",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "peg_square_12mm_loose",
-    "args": {
-      "task": "peg_square_12mm_loose",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "peg_square_12mm_tight",
-    "args": {
-      "task": "peg_square_12mm_tight",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "peg_square_16mm_loose",
-    "args": {
-      "task": "peg_square_16mm_loose",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "peg_square_16mm_tight",
-    "args": {
-      "task": "peg_square_16mm_tight",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "peg_square_4mm_loose",
-    "args": {
-      "task": "peg_square_4mm_loose",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "peg_square_4mm_tight",
-    "args": {
-      "task": "peg_square_4mm_tight",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "peg_square_8mm_loose",
-    "args": {
-      "task": "peg_square_8mm_loose",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "peg_square_8mm_tight",
-    "args": {
-      "task": "peg_square_8mm_tight",
+      "task": "peg_square_S_loose",
       "seed": 0
     }
   }

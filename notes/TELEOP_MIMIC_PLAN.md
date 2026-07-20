@@ -95,13 +95,13 @@ python isaaclab_arena/scripts/imitation_learning/record_demos.py \
   --device cuda:0 \
   --num_envs 1 \
   --step_hz 15 \
-  --dataset_file datasets/teleop/peg_round_8mm_loose_dik_session_001.hdf5 \
+  --dataset_file datasets/teleop/peg_round_M1_loose_dik_session_001.hdf5 \
   --num_demos 10 \
   --num_success_steps 1 \
   --external_environment_class_path \
   assembly_bench.environments.assembly.assembly:AssemblyBenchEnvironment \
   assembly_bench \
-  --task peg_round_8mm_loose \
+  --task peg_round_M1_loose \
   --embodiment droid_differential_ik \
   --teleop_device keyboard
 ```

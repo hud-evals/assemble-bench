@@ -62,10 +62,13 @@ RUN ${ISAAC_PY} -m pip install --no-cache-dir "pin-pink==3.1.0" \
 # the few packages hud genuinely needs newer, then install hud against a
 # constraints freeze of everything else (pip can add, never upgrade/remove).
 COPY hud-python /app/hud-python
+# openai is excluded from the freeze: kit ships 2.46 while hud pins 2.44, and
+# the env server never imports kit's openai path.
 RUN ${ISAAC_PY} -m pip install --no-cache-dir --ignore-installed \
         "packaging>=24.0" "pydantic>=2.11.7" "pyperclip>=1.9.0" "uvicorn>=0.35" "websockets>=15.0.1" \
+        "openai==2.44.0" \
     && ${ISAAC_PY} -m pip list --format=freeze --exclude-editable 2>/dev/null \
-        | grep -v -E "\+|@ file|prompt.toolkit|^(packaging|pydantic|pyperclip|uvicorn|websockets)==" \
+        | grep -v -E "\+|@ file|prompt.toolkit|^(packaging|pydantic|pyperclip|uvicorn|websockets|openai)==" \
         > /tmp/kit-constraints.txt \
     && ${ISAAC_PY} -m pip install --no-cache-dir -c /tmp/kit-constraints.txt \
         "/app/hud-python" msgpack \

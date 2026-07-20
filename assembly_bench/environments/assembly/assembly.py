@@ -8,7 +8,7 @@ selected via ``--task``. Run with, e.g.::
         --policy_type zero_action --num_episodes 1 \\
         --external_environment_class_path \\
         assembly_bench.environments.assembly.assembly:AssemblyBenchEnvironment \\
-        assembly_bench --task peg_round_8mm_tight
+        assembly_bench --task peg_round_M1_loose
 """
 
 import argparse
@@ -208,7 +208,7 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
 
     @staticmethod
     def add_cli_args(parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("--task", type=str, default="peg_round_8mm_tight", choices=sorted(VARIANTS))
+        parser.add_argument("--task", type=str, default="peg_round_M1_loose", choices=sorted(VARIANTS))
         # DROID platform (Franka + Robotiq 2F-85) with absolute joint-position
         # actions -- the source benchmark's droid_jointpos / pi0.5-DROID contract.
         # The _softmimic variant adds the benchmark's contact-stability tuning
@@ -230,7 +230,7 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
 
 
 def make_assembly_env(
-    task: str = "peg_round_8mm_tight",
+    task: str = "peg_round_M1_loose",
     num_envs: int = 1,
     embodiment: str = "droid_abs_joint_pos_softmimic",
     hdr: str = "asm_machine_shop",

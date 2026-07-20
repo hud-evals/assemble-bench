@@ -5,7 +5,7 @@ Builds the Arena env exactly like the policy runner, wraps it with ``hud.wrap``
 and drives the family's phase machine until every env terminates or times out.
 Prints phase-population and pose diagnostics as it goes. Run (isaac6 env):
 
-    python scripts/experts/run_expert.py --headless --task peg_round_8mm_tight --num_envs 4
+    python scripts/experts/run_expert.py --headless --task peg_round_M1_loose --num_envs 4
 """
 
 import os
@@ -157,8 +157,8 @@ with SimulationAppContext(args_cli):
     curate_nut = args_cli.factory_m16_assets or args_cli.curated_nut
     curate_bolt = args_cli.factory_m16_assets or args_cli.curated_bolt
     if curate_nut or curate_bolt:
-        if args_cli.task not in {"nut_m16_loose", "nut_m16_tight"}:
-            raise ValueError("curated M16 overrides require an M16 nut task")
+        if args_cli.task != "nut_M16":
+            raise ValueError("curated M16 overrides require --task nut_M16")
         from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
 
         factory_dir = f"{ISAACLAB_NUCLEUS_DIR}/Factory"
@@ -323,7 +323,7 @@ with SimulationAppContext(args_cli):
                 seat_off=variant.seat_off, seed=seed,
             )
         elif variant.family == "nut_thread":
-            size = int(args_cli.task.split("_")[1].removeprefix("m"))
+            size = int(args_cli.task.split("_")[1].lower().removeprefix("m"))
             machine = nut.make_machine(
                 base, servo, size=size, aim_off=aim_off,
                 lead_phase_off=lead_phase_off, seed=seed,
