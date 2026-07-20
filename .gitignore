@@ -5,3 +5,6 @@ submodules/
 data/
 # NvStreamer WebRTC trace logs (written to CWD by the livestream stack)
 *.etli
+
+# Local debug USD props (not part of the benchmark)
+assembly_bench/assets/parts/debug/
