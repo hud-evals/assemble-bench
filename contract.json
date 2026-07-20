@@ -1,0 +1,101 @@
+{
+  "robot_type": "droid_franka_robotiq",
+  "robot_class": "arm7g1",
+  "control_rate": 15,
+  "features": {
+    "camera_obs/front_cam_rgb": {
+      "role": "observation",
+      "type": "rgb"
+    },
+    "camera_obs/wrist_camera_rgb": {
+      "role": "observation",
+      "type": "rgb"
+    },
+    "policy/joint_pos": {
+      "role": "observation",
+      "state_type": "JOINT_ABS_POS",
+      "state_representation": "REAL",
+      "dtype": "float32",
+      "units": "rad",
+      "shape": [7],
+      "names": [
+        "panda_joint1",
+        "panda_joint2",
+        "panda_joint3",
+        "panda_joint4",
+        "panda_joint5",
+        "panda_joint6",
+        "panda_joint7"
+      ]
+    },
+    "policy/gripper_pos": {
+      "role": "observation",
+      "state_type": "JOINT_ABS_POS",
+      "state_representation": "NORM01",
+      "dtype": "float32",
+      "units": "none",
+      "shape": [1],
+      "names": ["gripper.opening"]
+    },
+    "policy/eef_pos": {
+      "role": "observation",
+      "state_type": "EE_ABS_POS",
+      "state_representation": "XYZ",
+      "frame": "world",
+      "dtype": "float32",
+      "units": "m",
+      "shape": [3],
+      "names": ["eef_pos.x", "eef_pos.y", "eef_pos.z"]
+    },
+    "policy/eef_quat": {
+      "role": "observation",
+      "state_type": "EE_ABS_ROT",
+      "state_representation": "QUATWXYZ",
+      "frame": "world",
+      "dtype": "float32",
+      "units": "none",
+      "shape": [4],
+      "names": ["eef_quat.w", "eef_quat.x", "eef_quat.y", "eef_quat.z"]
+    },
+    "policy/held_part_pose": {
+      "role": "observation",
+      "state_type": "OBJECT_ABS_POSE",
+      "state_representation": "XYZ_QUATXYZW",
+      "frame": "env_local",
+      "dtype": "float32",
+      "units": "m",
+      "shape": [7],
+      "names": ["held.x", "held.y", "held.z", "held.qx", "held.qy", "held.qz", "held.qw"],
+      "comment": "Privileged (PA-RL critic only); policy adapters must not consume."
+    },
+    "policy/fixed_part_pose": {
+      "role": "observation",
+      "state_type": "OBJECT_ABS_POSE",
+      "state_representation": "XYZ_QUATXYZW",
+      "frame": "env_local",
+      "dtype": "float32",
+      "units": "m",
+      "shape": [7],
+      "names": ["fixed.x", "fixed.y", "fixed.z", "fixed.qx", "fixed.qy", "fixed.qz", "fixed.qw"],
+      "comment": "Privileged (PA-RL critic only); policy adapters must not consume."
+    },
+    "action": {
+      "role": "action",
+      "state_type": "JOINT_ABS_POS",
+      "dtype": "float32",
+      "shape": [8],
+      "names": [
+        "panda_joint1",
+        "panda_joint2",
+        "panda_joint3",
+        "panda_joint4",
+        "panda_joint5",
+        "panda_joint6",
+        "panda_joint7",
+        "gripper.open_close"
+      ],
+      "comment": "Dims 0-6: absolute joint targets (rad, REAL). Dim 7: gripper (NORM01; >0.5 closes)."
+    }
+  },
+  "comment": "assembly_bench DROID (droid_abs_joint_pos): Franka Panda 7-DoF + Robotiq 2F-85. Wire keys match Arena obs groups. One action feature per the v0 contract: 7 absolute joint targets + binary gripper. Omits policy/actions and policy/robot_joint_pos (redundant with action echo / full articulation)."
+}

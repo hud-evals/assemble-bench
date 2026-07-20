@@ -22,7 +22,7 @@ def arm_joint_vel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntit
     return wp.to_torch(robot.data.joint_vel)[:, joint_indices]
 
 
-def asset_root_pose(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+def part_pose(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch.Tensor:
     """Env-local root pose of a scene asset: position(3) + quat xyzw(4).
 
     Privileged observation for the PA-RL critic (same convention as the
@@ -31,3 +31,7 @@ def asset_root_pose(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch.
     asset = env.scene[asset_cfg.name]
     pos = wp.to_torch(asset.data.root_pos_w) - env.scene.env_origins
     return torch.cat([pos, wp.to_torch(asset.data.root_quat_w)], dim=-1)
+
+
+# Alias used by assembly.py privileged ObsTerm wiring.
+asset_root_pose = part_pose
