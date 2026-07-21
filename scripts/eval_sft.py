@@ -27,7 +27,8 @@ async def main() -> None:
     ap.add_argument("--tasks", default=os.path.join(ROOT, "eval", "canonical4.json"))
     ap.add_argument("--runtime", default=os.environ.get("RUNTIME", "tcp://127.0.0.1:32768"))
     ap.add_argument("--group", type=int, default=8, help="repeats per task")
-    ap.add_argument("--max_concurrent", type=int, default=1)
+    ap.add_argument("--max_concurrent", type=int, default=8,
+                    help="parallel rollouts (match group / ASSEMBLY_NUM_ENVS for 8-env baseline)")
     a = ap.parse_args()
 
     ts = Taskset.from_file(a.tasks)

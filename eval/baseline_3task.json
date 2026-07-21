@@ -1,0 +1,35 @@
+[
+  {
+    "env": "assembly-bench",
+    "id": "assembly",
+    "slug": "peg_round_M1_loose",
+    "args": {
+      "task": "peg_round_M1_loose",
+      "seed": 0,
+      "reward": "staged",
+      "num_envs": 8
+    }
+  },
+  {
+    "env": "assembly-bench",
+    "id": "assembly",
+    "slug": "gear_medium",
+    "args": {
+      "task": "gear_medium",
+      "seed": 0,
+      "reward": "staged",
+      "num_envs": 8
+    }
+  },
+  {
+    "env": "assembly-bench",
+    "id": "assembly",
+    "slug": "nut_M16",
+    "args": {
+      "task": "nut_M16",
+      "seed": 0,
+      "reward": "staged",
+      "num_envs": 8
+    }
+  }
+]
