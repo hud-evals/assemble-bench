@@ -6,8 +6,9 @@ via :class:`~hud.agents.robot.RemoteModel` with ``response_key="action"``.
 
 Packing mirrors RoboLab's ``Cosmos3Client``: wrist + half-res left/right
 exteriors concatenated into one ``observation/image`` (540×640). assembly_bench
-only has front + wrist, so the front cam is duplicated into both exterior
-tiles (same trick as zero-filling a missing wrist on pi0.5).
+only has front + wrist (no dual over-shoulder), so the exterior tiles are
+fully masked to black (zeros). Set ``COSMOS_MASK_WRIST=1`` to black the wrist
+too (proprio-only ablation).
 
 Env vars:
   COSMOS_HOST / COSMOS_PORT — policy server (default localhost:8000)
@@ -65,10 +66,13 @@ class CosmosDroidAdapter(Adapter):
 
     def adapt_observation(self, obs: dict[str, Any], prompt: str) -> dict[str, Any]:
         data = obs["data"]
-        front = _as_hwc_uint8(data["camera_obs/front_cam_rgb"])
         wrist = _as_hwc_uint8(data["camera_obs/wrist_camera_rgb"])
-        # No dual over-shoulder cams — duplicate the frontal exterior.
-        image = pack_cosmos_image(wrist=wrist, left=front, right=front)
+        # Missing RoboLab over-shoulder cams → solid black exteriors (not a
+        # duplicated front, which injects the wrong viewpoint twice).
+        black = np.zeros_like(wrist)
+        if os.environ.get("COSMOS_MASK_WRIST", "").strip() in ("1", "true", "True"):
+            wrist = black
+        image = pack_cosmos_image(wrist=wrist, left=black, right=black)
         joints = np.asarray(data["policy/joint_pos"], dtype=np.float32).reshape(-1)
         grip = np.asarray(data["policy/gripper_pos"], dtype=np.float32).reshape(-1)
         return {

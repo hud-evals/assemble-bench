@@ -144,6 +144,12 @@ to light the scene with an HDRI dome. To run all variants as a batch, see
   geometrically verified (watertight, open bore) but a blind press does not
   seat them — by design, they need a contact-search / threading policy.
 
+## Cosmos3-Policy-DROID
+
+Zero-shot Cosms DROID eval (remote OpenPI policy server + HUD agent) is
+documented in [`COSMOS.md`](COSMOS.md) — setup, scripts under `scripts/cosmos_*`
+/ `eval_cosmos.py`, and camera-masking notes.
+
 ## Toward LeRobot EnvHub
 
 The environment is a standard Arena external environment, so it follows the
