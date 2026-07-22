@@ -262,7 +262,7 @@ class NISTAssemblyTask(TaskBase):
         self.fixed = fixed
         self.stand = stand
         self.extras = list(extras)
-        # "staged" turns on dense idempotent RL shaping (rewards.py); None/other
+        # "staged" / "potential" turn on dense RL shaping (rewards.py); None/other
         # leaves the env reward-free (eval default -- terminations unchanged).
         self.reward_mode = reward_mode
         # Our reset event owns all part poses.
@@ -327,11 +327,12 @@ class NISTAssemblyTask(TaskBase):
         return events
 
     def get_rewards_cfg(self):
-        """Dense staged RL reward when reward_mode="staged", else none."""
-        if self.reward_mode != "staged":
+        """Dense RL reward when reward_mode is staged|potential, else none."""
+        if self.reward_mode not in ("staged", "potential"):
             return None
         from assembly_bench.environments.assembly.rewards import build_rewards_cfg
-        return build_rewards_cfg(self.variant, self.held, self.fixed)
+        return build_rewards_cfg(self.variant, self.held, self.fixed,
+                                 mode=self.reward_mode)
 
     def get_scene_cfg(self):
         return None

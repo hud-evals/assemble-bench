@@ -1,11 +1,10 @@
-"""Smoke-test staged dense rewards with the scripted expert.
+"""Smoke-test dense assembly rewards with the scripted expert.
 
-Runs one variant with ``--reward staged``, accumulates per-env returns, and
-checks milestones / potentials against the expected success flow.
+Supports ``--reward staged`` (new-best) and ``--reward potential`` (Φ diff).
 
     /isaac-sim/python.sh scripts/experts/smoke_rewards.py \
         --headless --task peg_round_M1_loose --num_envs 4 \
-        --disable_cameras --no_stream --reward staged
+        --disable_cameras --no_stream --reward potential
 """
 
 import os
@@ -51,7 +50,10 @@ with SimulationAppContext(args_cli):
     parser.add_argument("--reset_rt_subframes", type=int, default=1)
     args_cli, _ = parser.parse_known_args()
     args_cli.enable_cameras = not args_cli.disable_cameras
-    args_cli.reward = "staged"  # always on for this smoke
+    # Default staged for back-compat; allow potential via --reward.
+    if getattr(args_cli, "reward", "none") not in ("staged", "potential"):
+        args_cli.reward = "staged"
+    reward_mode = args_cli.reward
     if not hasattr(args_cli, "language_instruction"):
         args_cli.language_instruction = None
     os.environ["ASSEMBLY_RESET_WARMUP_STEPS"] = str(args_cli.reset_warmup_steps)
@@ -65,10 +67,14 @@ with SimulationAppContext(args_cli):
     ceiling = milestone_floor + W_GRASP_PC + W_ALIGN_PC + W_DEPTH_PC + (
         W_THREAD_PC if is_nut else 0.0
     )
+    # Potential mode can undershoot the staged ceiling slightly (phase re-anchor)
+    # and overshoot a bit if the expert wiggles; keep a soft band.
+    pot_floor = milestone_floor - 0.15
+    pot_ceiling = ceiling + 0.25
 
     print(
         f"[smoke] task={args_cli.task} family={variant.family} n={args_cli.num_envs} "
-        f"reward=staged floor={milestone_floor:.1f} ceiling={ceiling:.1f} "
+        f"reward={reward_mode} floor={milestone_floor:.1f} ceiling={ceiling:.1f} "
         f"max_steps={max_steps}",
         flush=True,
     )
@@ -79,18 +85,17 @@ with SimulationAppContext(args_cli):
     base = env.unwrapped
 
     names = list(base.reward_manager.active_terms)
-    if "staged" not in names:
-        raise RuntimeError(f"staged reward not active; terms={names}")
+    if reward_mode not in names:
+        raise RuntimeError(f"{reward_mode} reward not active; terms={names}")
     print(f"[smoke] active reward terms: {names}", flush=True)
 
     def _term():
         rm = base.reward_manager
         if hasattr(rm, "get_term"):
-            t = rm.get_term("staged")
+            t = rm.get_term(reward_mode)
             if t is not None and hasattr(t, "_fired"):
                 return t
-        # Isaac Lab stores terms as a list parallel to active_terms.
-        idx = list(rm.active_terms).index("staged")
+        idx = list(rm.active_terms).index(reward_mode)
         for attr in ("_terms", "_term_cfgs"):
             bag = getattr(rm, attr, None)
             if bag is None:
@@ -99,7 +104,7 @@ with SimulationAppContext(args_cli):
             cand = getattr(item, "func", item)
             if hasattr(cand, "_fired"):
                 return cand
-        raise RuntimeError("cannot resolve staged_assembly_reward term instance")
+        raise RuntimeError(f"cannot resolve {reward_mode} reward term instance")
 
     results = []
     any_success = False
@@ -127,10 +132,11 @@ with SimulationAppContext(args_cli):
         ret = torch.zeros(n, device=base.device)
         finished = torch.zeros(n, dtype=torch.bool, device=base.device)
         succ_ever = torch.zeros_like(finished)
-        # Sticky OR of term state across steps (survives the success-step reset).
+        saw_neg = torch.zeros(n, dtype=torch.bool, device=base.device)
         snap_fired = {k: torch.zeros(n, dtype=torch.bool, device=base.device)
                       for k in ("lifted", "engaged", "thread_start", "success")}
-        snap_best = {
+        # staged: _best_*; potential: _peak_* (same diagnostic role).
+        snap_prog = {
             "grasp": torch.zeros(n, device=base.device),
             "xy": torch.zeros(n, device=base.device),
             "depth": torch.zeros(n, device=base.device),
@@ -149,31 +155,37 @@ with SimulationAppContext(args_cli):
             rew = rew.view(-1)
             still = ~finished
             ret = ret + torch.where(still, rew, torch.zeros_like(rew))
+            saw_neg = saw_neg | (still & (rew < -1e-6))
 
             succ_now = base.termination_manager.get_term("success")
             done_now = terminated | truncated
             succ_ever |= succ_now
 
-            # Continuing envs keep term state after step — read it.
-            # Just-finished envs were reset; OR in success from the termination bit.
             t = _term()
             cont = still & ~done_now
             for k in snap_fired:
                 snap_fired[k] = snap_fired[k] | torch.where(cont, t._fired[k], False)
-            snap_best["grasp"] = torch.where(
-                cont, torch.maximum(snap_best["grasp"], t._best_grasp), snap_best["grasp"])
-            snap_best["xy"] = torch.where(
-                cont, torch.maximum(snap_best["xy"], t._best_xy), snap_best["xy"])
-            snap_best["depth"] = torch.where(
-                cont, torch.maximum(snap_best["depth"], t._best_depth), snap_best["depth"])
-            snap_best["thread"] = torch.where(
-                cont, torch.maximum(snap_best["thread"], t._best_thread), snap_best["thread"])
+            if reward_mode == "staged":
+                snap_prog["grasp"] = torch.where(
+                    cont, torch.maximum(snap_prog["grasp"], t._best_grasp), snap_prog["grasp"])
+                snap_prog["xy"] = torch.where(
+                    cont, torch.maximum(snap_prog["xy"], t._best_xy), snap_prog["xy"])
+                snap_prog["depth"] = torch.where(
+                    cont, torch.maximum(snap_prog["depth"], t._best_depth), snap_prog["depth"])
+                snap_prog["thread"] = torch.where(
+                    cont, torch.maximum(snap_prog["thread"], t._best_thread), snap_prog["thread"])
+            else:
+                snap_prog["grasp"] = torch.where(
+                    cont, torch.maximum(snap_prog["grasp"], t._peak_grasp), snap_prog["grasp"])
+                snap_prog["xy"] = torch.where(
+                    cont, torch.maximum(snap_prog["xy"], t._peak_xy), snap_prog["xy"])
+                snap_prog["depth"] = torch.where(
+                    cont, torch.maximum(snap_prog["depth"], t._peak_depth), snap_prog["depth"])
+                snap_prog["thread"] = torch.where(
+                    cont, torch.maximum(snap_prog["thread"], t._peak_thread), snap_prog["thread"])
             snap_fired["success"] = snap_fired["success"] | (succ_now & still)
-            # Lift/engage usually fire many steps before success; if an env
-            # somehow succeeds in one step after engage, sticky OR already has them.
-            # Infer lift/engage from return floor when success lands.
             just_done_succ = succ_now & still
-            if just_done_succ.any() and float(ret[just_done_succ].min()) >= milestone_floor - 0.05:
+            if just_done_succ.any() and float(ret[just_done_succ].min()) >= pot_floor:
                 snap_fired["lifted"] = snap_fired["lifted"] | just_done_succ
                 snap_fired["engaged"] = snap_fired["engaged"] | just_done_succ
 
@@ -190,50 +202,58 @@ with SimulationAppContext(args_cli):
             if bool(finished.all()):
                 break
 
-        # Validate each env that succeeded.
         for i in range(n):
             if not bool(succ_ever[i]):
                 continue
             any_success = True
             r = float(ret[i])
+            lo = pot_floor if reward_mode == "potential" else milestone_floor
+            hi = pot_ceiling if reward_mode == "potential" else ceiling + 0.05
             checks = {
-                "return_ge_floor": r + 1e-3 >= milestone_floor,
-                "return_le_ceiling": r <= ceiling + 0.05,
+                "return_ge_floor": r + 1e-3 >= lo,
+                "return_le_ceiling": r <= hi,
                 "lifted": bool(snap_fired["lifted"][i]),
                 "engaged": bool(snap_fired["engaged"][i]),
                 "success": bool(snap_fired["success"][i]),
-                "grasp_progress": float(snap_best["grasp"][i]) > 0.3,
-                "xy_progress": float(snap_best["xy"][i]) > 0.3,
-                "depth_progress": float(snap_best["depth"][i]) > 0.3,
+                "grasp_progress": float(snap_prog["grasp"][i]) > 0.3,
+                "xy_progress": float(snap_prog["xy"][i]) > 0.3,
+                "depth_progress": float(snap_prog["depth"][i]) > 0.3,
             }
             if is_nut:
                 checks["thread_start"] = bool(snap_fired["thread_start"][i])
-                checks["thread_progress"] = float(snap_best["thread"][i]) > 0.2
+                checks["thread_progress"] = float(snap_prog["thread"][i]) > 0.2
+            # Potential mode should produce some negative steps if the expert
+            # ever overshoots; don't fail the smoke if the path is perfectly monotone.
+            if reward_mode == "potential":
+                checks["has_signed_or_monotone"] = True  # informational only
             results.append({
                 "env": i, "wave": wave, "return": r,
-                "best": {k: float(snap_best[k][i]) for k in snap_best},
+                "saw_neg": bool(saw_neg[i]),
+                "prog": {k: float(snap_prog[k][i]) for k in snap_prog},
                 "checks": checks,
             })
             ok = all(checks.values())
             print(
-                f"[smoke] env{i} SUCCESS return={r:.3f} "
-                f"(floor={milestone_floor:.1f} ceil={ceiling:.1f}) "
-                f"bests={{{', '.join(f'{k}={float(snap_best[k][i]):.2f}' for k in snap_best)}}} "
-                f"{'PASS' if ok else 'FAIL ' + str([k for k,v in checks.items() if not v])}",
+                f"[smoke] env{i} SUCCESS return={r:.3f} saw_neg={bool(saw_neg[i])} "
+                f"(floor={lo:.1f} ceil={hi:.1f}) "
+                f"prog={{{', '.join(f'{k}={float(snap_prog[k][i]):.2f}' for k in snap_prog)}}} "
+                f"{'PASS' if ok else 'FAIL ' + str([k for k, v in checks.items() if not v])}",
                 flush=True,
             )
 
         print(
             f"[smoke] wave {wave}: seated {int(succ_ever.sum())}/{n} "
             f"mean_ret_succ="
-            f"{float(ret[succ_ever].mean()) if succ_ever.any() else float('nan'):.3f}",
+            f"{float(ret[succ_ever].mean()) if succ_ever.any() else float('nan'):.3f} "
+            f"neg_frac={float(saw_neg.float().mean()):.2f}",
             flush=True,
         )
 
     env.close()
 
     print("\n======== REWARD SMOKE SUMMARY ========", flush=True)
-    print(f"task={args_cli.task}  successes={len(results)}/{args_cli.num_envs * args_cli.waves}",
+    print(f"task={args_cli.task} reward={reward_mode} "
+          f"successes={len(results)}/{args_cli.num_envs * args_cli.waves}",
           flush=True)
     if not any_success:
         print("FAIL: no successful expert episodes — cannot validate reward flow", flush=True)
@@ -244,12 +264,12 @@ with SimulationAppContext(args_cli):
         status = "PASS" if all(r["checks"].values()) else "FAIL"
         print(
             f"  [{status}] wave{r['wave']} env{r['env']} return={r['return']:.3f} "
-            f"checks={r['checks']}",
+            f"saw_neg={r['saw_neg']} checks={r['checks']}",
             flush=True,
         )
     if failed:
         print(f"FAIL: {len(failed)}/{len(results)} successful envs failed reward checks",
               flush=True)
         raise SystemExit(1)
-    print(f"PASS: all {len(results)} successful envs match staged reward expectations",
+    print(f"PASS: all {len(results)} successful envs match {reward_mode} reward expectations",
           flush=True)

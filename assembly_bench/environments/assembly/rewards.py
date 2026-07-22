@@ -1,16 +1,18 @@
-"""Staged assembly reward for RL fine-tuning (opt-in; eval leaves it off).
+"""Assembly RL rewards (opt-in; eval leaves them off).
 
-Dense, idempotent shaping for PA-RL / FilteredBC: once-fired milestones plus
-new-best potentials (pay only progress, never a per-step "being close" rate).
+Two modes:
 
-Phases:
+- ``staged`` — once-fired milestones + new-best potentials (pay only progress).
+- ``potential`` — same milestones + signed Φ(s')−Φ(s) (Markov in pose state;
+  nonzero local slope every step; needed for residual SAC inside a ξ-ball).
+
+Phases (both modes):
   pre-lift  -- Φ_grasp: EE approaches the held part
   post-lift -- Φ_xy / Φ_depth: held part approaches the seat
-  nut only  -- after engage: once-fired first-turn + Φ_thread (new-best turns)
+  nut only  -- after engage: once-fired first-turn + Φ_thread
 
-Wired only when ``reward_mode="staged"``; eval stays reward-free. Seat geometry
-matches ``tasks.part_seated``. State lives on ``ManagerTermBase`` (same pattern
-as ``hold_success``).
+Wired when ``reward_mode`` is ``"staged"`` or ``"potential"``. Seat geometry
+matches ``tasks.part_seated``. State lives on ``ManagerTermBase``.
 """
 
 import math
@@ -198,31 +200,175 @@ class staged_assembly_reward(ManagerTermBase):
         return r / env.step_dt
 
 
+class potential_assembly_reward(ManagerTermBase):
+    """Milestones + signed Φ(s')−Φ(s) (Markov; nonzero slope every step).
+
+    Same phase-gated potentials as ``staged``, but pays the potential *difference*
+    instead of new-best deltas — so reversing away from the peg is penalized and
+    the critic sees an action gradient inside the residual ξ-ball. Phase switches
+    (lift / engage for nuts) re-anchor ``_prev_phi`` so the Φ definition change
+    does not inject a spurious jump; the milestone already covers that transition.
+    """
+
+    def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        n, dev = env.num_envs, env.device
+        self._fired = {k: torch.zeros(n, dtype=torch.bool, device=dev) for k in MILESTONES}
+        self._prev_phi = torch.zeros(n, device=dev)
+        self._prev_yaw = torch.zeros(n, device=dev)
+        self._yaw_valid = torch.zeros(n, dtype=torch.bool, device=dev)
+        self._turns = torch.zeros(n, device=dev)
+        # Smoke / diagnostics: peak |potential| seen this episode (not used in r).
+        self._peak_grasp = torch.zeros(n, device=dev)
+        self._peak_xy = torch.zeros(n, device=dev)
+        self._peak_depth = torch.zeros(n, device=dev)
+        self._peak_thread = torch.zeros(n, device=dev)
+
+    def reset(self, env_ids=None) -> None:
+        idx = slice(None) if env_ids is None else env_ids
+        for v in self._fired.values():
+            v[idx] = False
+        self._prev_phi[idx] = 0.0
+        self._prev_yaw[idx] = 0.0
+        self._yaw_valid[idx] = False
+        self._turns[idx] = 0.0
+        self._peak_grasp[idx] = 0.0
+        self._peak_xy[idx] = 0.0
+        self._peak_depth[idx] = 0.0
+        self._peak_thread[idx] = 0.0
+
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        held_cfg: SceneEntityCfg,
+        fixed_cfg: SceneEntityCfg,
+        robot_cfg: SceneEntityCfg,
+        seat_off: tuple[float, float, float],
+        held_base_z_off: float,
+        align_tol: float,
+        seat_tol: float,
+        engage_gap: float,
+        lift_clear: float,
+        partial_socket_h: float,
+        stand_z: float,
+        ee_body: str,
+        family: str = "peg_insert",
+    ) -> torch.Tensor:
+        held = env.scene[held_cfg.name]
+        robot = env.scene[robot_cfg.name]
+        origins = env.scene.env_origins
+        held_pos = wp.to_torch(held.data.root_pos_w) - origins
+        held_z = held_pos[:, 2]
+        xy, gap = _align_and_gap(env, held_cfg, fixed_cfg, seat_off, held_base_z_off)
+
+        ee_idx = robot.data.body_names.index(ee_body)
+        ee_pos = wp.to_torch(robot.data.body_pos_w)[:, ee_idx] - origins
+        grasp_d = torch.norm(held_pos - (ee_pos - torch.tensor(
+            [0.0, 0.0, GRASP_Z_OFF], device=env.device)), dim=-1)
+        phi_grasp = torch.clamp(1.0 - grasp_d / GRASP_DIST0, 0.0, 1.0)
+        phi_xy = torch.clamp(1.0 - xy / ALIGN_DIST0, 0.0, 1.0)
+        phi_depth = torch.clamp(1.0 - gap / partial_socket_h, 0.0, 1.0)
+
+        lifted = (held_z - stand_z) > lift_clear
+        engaged = (xy < align_tol) & (gap < engage_gap)
+        success = part_seated(env, held_cfg, fixed_cfg, seat_off, held_base_z_off,
+                              align_tol, seat_tol)
+
+        is_nut = family == "nut_thread"
+        thread_start = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+        if is_nut:
+            yaw = _yaw_z(wp.to_torch(held.data.root_quat_w))
+            delta = (yaw - self._prev_yaw + torch.pi) % (2.0 * torch.pi) - torch.pi
+            self._turns = self._turns + torch.where(
+                engaged & self._yaw_valid, delta.abs(), torch.zeros_like(delta))
+            self._prev_yaw = yaw
+            self._yaw_valid = self._yaw_valid | engaged
+            thread_start = self._turns > THREAD_START_RAD
+            phi_thread = torch.clamp(self._turns / THREAD_TARGET_RAD, 0.0, 1.0)
+        else:
+            phi_thread = torch.zeros(env.num_envs, device=env.device)
+
+        states = {
+            "lifted": lifted,
+            "engaged": engaged,
+            "thread_start": thread_start if is_nut else torch.zeros_like(lifted),
+            "success": success,
+        }
+        weights = {
+            "lifted": W_LIFT,
+            "engaged": W_ENGAGE,
+            "thread_start": W_THREAD_START,
+            "success": W_SUCCESS,
+        }
+
+        r = torch.zeros(env.num_envs, device=env.device)
+        # Track which milestones newly fire — phase-switch re-anchor uses these.
+        newly = {}
+        for k in MILESTONES:
+            newly[k] = states[k] & ~self._fired[k]
+            r += weights[k] * newly[k].float()
+            self._fired[k] |= states[k]
+
+        # Phase-gated Φ (same pieces as staged's continuous terms).
+        pre_lift = ~self._fired["lifted"]
+        post_lift = self._fired["lifted"]
+        phi = W_GRASP_PC * phi_grasp * pre_lift.float()
+        phi = phi + (W_ALIGN_PC * phi_xy + W_DEPTH_PC * phi_depth) * post_lift.float()
+        if is_nut:
+            phi = phi + W_THREAD_PC * phi_thread * self._fired["engaged"].float()
+
+        # Re-anchor Φ on phase switches so the definition change isn't a fake payout.
+        phase_switch = newly["lifted"]
+        if is_nut:
+            phase_switch = phase_switch | newly["engaged"]
+        prev = torch.where(phase_switch, phi, self._prev_phi)
+        r = r + (phi - prev)
+        self._prev_phi = phi
+
+        # Peaks for smoke diagnostics (mirror staged's best-* checks).
+        self._peak_grasp = torch.where(
+            pre_lift, torch.maximum(self._peak_grasp, phi_grasp), self._peak_grasp)
+        self._peak_xy = torch.where(
+            post_lift, torch.maximum(self._peak_xy, phi_xy), self._peak_xy)
+        self._peak_depth = torch.where(
+            post_lift, torch.maximum(self._peak_depth, phi_depth), self._peak_depth)
+        if is_nut:
+            on_bolt = self._fired["engaged"]
+            self._peak_thread = torch.where(
+                on_bolt, torch.maximum(self._peak_thread, phi_thread), self._peak_thread)
+
+        return r / env.step_dt
+
+
 @configclass
 class AssemblyRewardsCfg:
     staged: RewardTermCfg = None
+    potential: RewardTermCfg = None
 
 
 def build_rewards_cfg(variant: AssemblyVariant, held, fixed, robot_name: str = "robot",
-                      ee_body: str = "base_link") -> AssemblyRewardsCfg:
-    """Staged reward wired to a variant's seat geometry. ``weight=1.0``
-    (per-term weights live inside; dt is undone there)."""
+                      ee_body: str = "base_link",
+                      mode: str = "staged") -> AssemblyRewardsCfg:
+    """Reward wired to a variant's seat geometry. ``mode`` is staged|potential."""
+    params = {
+        "held_cfg": SceneEntityCfg(held.name),
+        "fixed_cfg": SceneEntityCfg(fixed.name),
+        "robot_cfg": SceneEntityCfg(robot_name),
+        "seat_off": variant.seat_off,
+        "held_base_z_off": variant.held_base_z_off,
+        "align_tol": variant.align_tol,
+        "seat_tol": variant.seat_tol,
+        "engage_gap": variant.engage_gap,
+        "lift_clear": variant.lift_clear,
+        "partial_socket_h": variant.partial_socket_h,
+        "stand_z": TABLE_TOP_Z,
+        "ee_body": ee_body,
+        "family": variant.family,
+    }
+    if mode == "potential":
+        return AssemblyRewardsCfg(potential=RewardTermCfg(
+            func=potential_assembly_reward, weight=1.0, params=params))
+    if mode != "staged":
+        raise ValueError(f"unknown reward mode {mode!r}; expected staged|potential")
     return AssemblyRewardsCfg(staged=RewardTermCfg(
-        func=staged_assembly_reward,
-        weight=1.0,
-        params={
-            "held_cfg": SceneEntityCfg(held.name),
-            "fixed_cfg": SceneEntityCfg(fixed.name),
-            "robot_cfg": SceneEntityCfg(robot_name),
-            "seat_off": variant.seat_off,
-            "held_base_z_off": variant.held_base_z_off,
-            "align_tol": variant.align_tol,
-            "seat_tol": variant.seat_tol,
-            "engage_gap": variant.engage_gap,
-            "lift_clear": variant.lift_clear,
-            "partial_socket_h": variant.partial_socket_h,
-            "stand_z": TABLE_TOP_Z,
-            "ee_body": ee_body,
-            "family": variant.family,
-        },
-    ))
+        func=staged_assembly_reward, weight=1.0, params=params))
