@@ -25,7 +25,9 @@ from isaaclab_arena.assets.object_library import LibraryObject
 from isaaclab_arena.assets.object_utils import RIGID_BODY_PROPS_HIGH_PRECISION
 from isaaclab_arena.assets.register import register_asset, register_hdr
 
-ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
+# absolute() (not resolve): HF Hub snapshots symlink into blobs/, and resolve()
+# would land ASSETS_DIR on ~/.cache/huggingface/hub/assets.
+ASSETS_DIR = Path(__file__).absolute().parents[2] / "assets"
 PARTS_DIR = ASSETS_DIR / "parts"
 
 
@@ -60,7 +62,8 @@ def _register(name: str, usd: str, *, mass: float | None = None, impulse_cap: fl
     articulation root and spawns an immovable rigid body instead."""
     spawn: dict = {
         "mass_props": sim_utils.MassPropertiesCfg(mass=mass) if mass is not None else None,
-        "collision_props": sim_utils.CollisionPropertiesCfg(contact_offset=0.005, rest_offset=0.0),
+        # Tighter contact skin (was 0.005) — less early pad push before true clamp.
+        "collision_props": sim_utils.CollisionPropertiesCfg(contact_offset=0.001, rest_offset=0.0),
     }
     if kinematic:
         spawn["rigid_props"] = sim_utils.RigidBodyPropertiesCfg(

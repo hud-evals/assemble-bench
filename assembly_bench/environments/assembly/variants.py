@@ -74,6 +74,7 @@ def _peg(size_code: str, geometry: str) -> AssemblyVariant:
         held_pos=PEG_HELD_POS,
         fixed_pos=PEG_FIXED_POS,
         rand_fixed_yaw=0.6 if geometry == "square" else 0.0,
+        held_friction=1.0,  # pad grip (default 0.75 was too slippery for pick)
     )
 
 

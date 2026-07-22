@@ -106,9 +106,8 @@ def apply_assembly_droid_tuning(embodiment: Any) -> None:
     robot = embodiment.scene_config.robot
 
     # Point the spawn at the softened-mimic overlay (keeps the calibrated asset,
-    # overrides only the mimic springs). The USD's native firm finger drive
-    # stays as-is: it stops the pad firmly at the part surface, and the mimic
-    # coupling -- not the finger drive -- was the divergence root cause.
+    # overrides only the mimic springs). Mimic coupling -- not the finger drive --
+    # was the NaN divergence root cause; finger PD is set explicitly below.
     robot.spawn.usd_path = _softened_mimic_overlay(robot.spawn.usd_path)
 
     # Ramming the table should stall, not explode: keep depenetration bounded,
@@ -119,16 +118,27 @@ def apply_assembly_droid_tuning(embodiment: Any) -> None:
     robot.spawn.articulation_props.solver_velocity_iteration_count = 8
     robot.spawn.articulation_props.solver_position_iteration_count = 192
 
-    # Compliant arm: soften PD (400/80 -> 150/40) so the arm yields under
-    # contact instead of shoving the now-rigid gripper into the part ("arm
-    # gives, gripper stays"). Restore the real panda joint-speed limits
-    # (velocity_limit is a no-op on implicit actuators) and add base-panda
-    # armature to damp high-PD jitter.
-    for name, vlim in (("panda_shoulder", 2.175), ("panda_forearm", 2.61)):
+    # Compliant arm ("arm gives, gripper stays"): soften PD so an off-center
+    # pad contact yields the arm a few mm instead of knocking the peg away.
+    # Forearm/wrist is softer than the shoulder -- that is the joint chain
+    # that absorbs lateral pad force during grasp. Absolute joint *targets*
+    # in the recorded dataset are unchanged; only contact tracking gives.
+    # Restore real panda joint-speed limits and add armature to damp jitter.
+    for name, vlim, stiff, damp in (
+        ("panda_shoulder", 2.175, 100.0, 28.0),  # was 400/80 stock, then 150/40
+        ("panda_forearm", 2.61, 50.0, 18.0),     # softer wrist for pad give
+    ):
         robot.actuators[name].velocity_limit_sim = vlim
         robot.actuators[name].armature = 1e-3
-        robot.actuators[name].stiffness = 150.0
-        robot.actuators[name].damping = 40.0
+        robot.actuators[name].stiffness = stiff
+        robot.actuators[name].damping = damp
+
+    # Firm finger drive: stock leaves stiffness/damping None (USD-native). Explicit
+    # high PD + effort so the pad clamps instead of mushing (~17 sank into parts).
+    grip = robot.actuators["gripper"]
+    grip.stiffness = 200.0
+    grip.damping = 40.0
+    grip.effort_limit_sim = 200.0
 
     # Joint velocities alongside joint positions in the policy obs (recorded to
     # HDF5 via the flat policy-obs recorder term).
