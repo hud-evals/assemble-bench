@@ -172,31 +172,31 @@ def settle_and_render(env, env_ids, steps: int = 120, rt_subframes: int = 32) ->
         env.sim.step(render=True)
         for sensor in env.scene.sensors.values():
             sensor.update(dt=0.0, force_recompute=True)
-    # Hard temporal-history reset: DLAA's static-pixel blend is too sticky to
-    # flush by re-rendering alone (120 warmup renders + a 32-frame pump only
-    # FADED teleport ghosts). Toggling the AA mode tears down the accumulation
-    # buffers -- one FXAA frame has no history at all -- then DLAA rebuilds
-    # them from the NEW scene; a short pump re-converges quality before the
-    # first recorded frame. (rep.orchestrator.step is NOT usable here: it
-    # blocks on Replicator's capture pipeline, which this workflow never runs.)
-    # Only meaningful when rendering images. Under --disable_cameras (dev A/B
-    # runs) Replicator isn't loaded and there are no frames to de-ghost, so
-    # skip the toggle gracefully instead of crashing the reset.
+    # DLAA history survives re-renders; FXAA→DLAA tears it down. Must *render*
+    # under FXAA (app.update alone left a 1-tick front_cam ghost). Skip when
+    # cameras/Replicator aren't loaded (--disable_cameras). Don't pause
+    # /app/player/playSimulations — headless Kit can exit 0.
     try:
         import omni.kit.app
         import omni.replicator.core as rep
     except ModuleNotFoundError:
         return
     app = omni.kit.app.get_app()
-    env.sim.set_setting("/app/player/playSimulations", False)
     rep.settings.set_render_rtx_realtime(antialiasing="FXAA")
-    for _ in range(2):
+    for _ in range(4):
+        for art in env.scene.articulations.values():
+            art.write_data_to_sim()  # raw sim.step skips manager write
+        env.sim.step(render=True)
         app.update()
+    for sensor in env.scene.sensors.values():
+        sensor.update(dt=0.0, force_recompute=True)
     rep.settings.set_render_rtx_realtime(antialiasing="DLAA")
     for _ in range(rt_subframes):
         app.update()
-    env.sim.set_setting("/app/player/playSimulations", True)
-    # Refetch so the first post-reset obs reads the pumped, ghost-free frame.
+    # Post-flush render so tick-0 obs is clean on every camera product.
+    for art in env.scene.articulations.values():
+        art.write_data_to_sim()
+    env.sim.step(render=True)
     for sensor in env.scene.sensors.values():
         sensor.update(dt=0.0, force_recompute=True)
 
