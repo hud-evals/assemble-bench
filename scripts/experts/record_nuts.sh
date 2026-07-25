@@ -6,10 +6,10 @@ cd /app/assembly_bench
 mkdir -p data/hdf5
 # Most reliable first so we bank demos while iterating flaky tiers.
 TASKS=(
-  nut_m16_loose
-  nut_m12_loose
-  nut_m20_loose
-  nut_m8_loose
+  nut_M16
+  nut_M12
+  nut_M20
+  nut_M8
 )
 MAX_DEMOS="${MAX_DEMOS:-50}"
 NUM_ENVS="${NUM_ENVS:-8}"

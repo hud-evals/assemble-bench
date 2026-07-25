@@ -5,7 +5,7 @@ Builds the Arena env exactly like the policy runner, wraps it with ``hud.wrap``
 and drives the family's phase machine until every env terminates or times out.
 Prints phase-population and pose diagnostics as it goes. Run (isaac6 env):
 
-    python scripts/experts/run_expert.py --headless --task peg_round_M1_loose --num_envs 4
+    python scripts/experts/run_expert.py --headless --task peg_round_8mm --num_envs 4
 """
 
 import os
@@ -81,7 +81,7 @@ with SimulationAppContext(args_cli):
     parser.add_argument("--curated_bolt", action="store_true",
                         help="use curated Factory M16 bolt only (A/B which SDF blocks threading)")
     parser.add_argument("--nut_usd", type=str, default=None,
-                        help="override held nut USD path (e.g. factory_nut_m16_loose.usd)")
+                        help="override held nut USD path (e.g. factory_nut_M16.usd)")
     parser.add_argument("--bolt_usd", type=str, default=None,
                         help="override fixed bolt USD path (e.g. factory_bolt_m16_loose.usd)")
     parser.add_argument("--grip_effort", type=float, default=None,
@@ -103,6 +103,9 @@ with SimulationAppContext(args_cli):
                         help="stop after this many demos are recorded (bulk data-gen)")
     parser.add_argument("--keep_failures", action="store_true",
                         help="record failed episodes too (default: success-filtered)")
+    parser.add_argument("--target_success_rate", type=float, default=None,
+                        help="with --max_demos, bank successes/failures to this mix "
+                             "(e.g. 0.7 -> 70 success / 30 fail); implies keep_failures")
     parser.add_argument("--stream", action="store_true",
                         help="force HUD trace streaming even during a --record run (default: "
                              "streaming is ON for interactive runs, OFF for --record so bulk "
@@ -277,13 +280,16 @@ with SimulationAppContext(args_cli):
             base, args_cli.record, args_cli.task, variant.instruction,
             max_demos=args_cli.max_demos,
             keep_failures=args_cli.keep_failures,
+            target_success_rate=args_cli.target_success_rate,
         )
         if args_cli.record else None
     )
 
     for wave in range(args_cli.waves):
         print(f"[expert] wave {wave}: reset start", flush=True)
-        env.reset()
+        reset_out = env.reset()
+        # s_0 for pre-step recording (sa_align=pre_step). Gymnasium: (obs, info).
+        obs = reset_out[0] if isinstance(reset_out, tuple) else reset_out
         print(f"[expert] wave {wave}: reset complete", flush=True)
         # hud.wrap opens a fresh trace after every per-slot auto-reset. Restore
         # the four initial slots for each explicit wave; completed slots are
@@ -345,11 +351,13 @@ with SimulationAppContext(args_cli):
                 action[:, 7:],
             ], dim=-1)
             action = torch.where(finished_once.unsqueeze(-1), hold, action)
-            obs, rew, terminated, truncated, _ = env.step(action)
+            # pre_step convention: bank (obs=s_t, action=a_t, rew=r_t), then advance.
+            next_obs, rew, terminated, truncated, _ = env.step(action)
             succ_now = base.termination_manager.get_term("success")
             done_now = terminated | truncated
             if recorder is not None:
                 recorder.step(obs, action, done_now, succ_now, reward=rew)
+            obs = next_obs
             if done_now.any() and getattr(env, "_rec", None) is not None:
                 env._rec.record_indices = [
                     i for i in env._rec.record_indices if not bool(done_now[i])
@@ -472,8 +480,12 @@ with SimulationAppContext(args_cli):
             kept = recorder.flush()
         else:
             kept = 0
-        print(f"[expert] wave {wave}: seated {int(succ_ever.sum())}/{base.num_envs}"
-              f"{f' recorded {kept} (total {recorder.n_demos})' if recorder else ''}", flush=True)
+        mix = ""
+        if recorder is not None:
+            mix = (f" recorded {kept} (total {recorder.n_demos}"
+                   f" = {recorder.n_success}ok/{recorder.n_fail}fail)")
+        print(f"[expert] wave {wave}: seated {int(succ_ever.sum())}/{base.num_envs}{mix}",
+              flush=True)
         if args_cli.debug_fail:
             # Per-env post-mortem: final phase, failed flag, and the seat/yaw
             # residuals -- shows WHY each env failed (bad clock vs bad seat).

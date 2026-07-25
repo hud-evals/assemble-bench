@@ -38,6 +38,10 @@ SUCCESS_HOLD_STEPS = 3
 # The presentation stand only presents the part upright -- near-frictionless
 # so the part lifts off cleanly instead of jamming in the bore.
 STAND_FRICTION = 0.01
+# Robotiq fingertip pads (rubber). With friction_combine_mode=max this μ wins
+# over a metal-ish held part (~0.5) at the grasp contact.
+PAD_FRICTION = 1.3
+PAD_BODIES = ("left_inner_finger", "right_inner_finger")
 # Failure: the held part fell below the tabletop.
 DROP_HEIGHT = TABLE_TOP_Z - 0.05
 
@@ -201,8 +205,21 @@ def settle_and_render(env, env_ids, steps: int = 120, rt_subframes: int = 32) ->
         sensor.update(dt=0.0, force_recompute=True)
 
 
-def _friction_term(asset_name: str, friction: float) -> EventTermCfg:
-    """Startup term pinning an asset's contact friction (source: set_friction)."""
+def _friction_term(
+    asset_name: str,
+    friction: float,
+    body_names: tuple[str, ...] | None = None,
+) -> EventTermCfg:
+    """Startup term pinning an asset's contact friction (source: set_friction).
+
+    Optional ``body_names`` scopes the write (e.g. Robotiq pads only); omit to
+    set every shape on the asset.
+    """
+    asset_cfg = (
+        SceneEntityCfg(asset_name, body_names=list(body_names))
+        if body_names is not None
+        else SceneEntityCfg(asset_name)
+    )
     return EventTermCfg(
         func=mdp.randomize_rigid_body_material,
         mode="startup",
@@ -211,7 +228,7 @@ def _friction_term(asset_name: str, friction: float) -> EventTermCfg:
             "dynamic_friction_range": (friction, friction),
             "restitution_range": (0.0, 0.0),
             "num_buckets": 1,
-            "asset_cfg": SceneEntityCfg(asset_name),
+            "asset_cfg": asset_cfg,
         },
     )
 
@@ -235,6 +252,7 @@ class AssemblyEventsCfg:
     friction_held: EventTermCfg | None = None
     friction_fixed: EventTermCfg | None = None
     friction_stand: EventTermCfg | None = None
+    friction_pads: EventTermCfg | None = None
     friction_extra_0: EventTermCfg | None = None
     friction_extra_1: EventTermCfg | None = None
     # LAST field: terms run in declaration order, and the warmup must follow
@@ -319,6 +337,8 @@ class NISTAssemblyTask(TaskBase):
             ),
             friction_held=_friction_term(self.held.name, v.held_friction),
             friction_fixed=_friction_term(self.fixed.name, v.fixed_friction),
+            # Pad μ only (not the whole robot) so grasp grip ≠ arm/table contacts.
+            friction_pads=_friction_term("robot", PAD_FRICTION, PAD_BODIES),
         )
         if self.stand is not None:
             events.friction_stand = _friction_term(self.stand.name, STAND_FRICTION)

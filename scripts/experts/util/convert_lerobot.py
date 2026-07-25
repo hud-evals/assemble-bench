@@ -8,6 +8,10 @@ obs keys; images at DROID-RLDS 320x180. Every recorded variant HDF5 becomes task
 in one dataset, keyed by its per-episode instruction. Runs in the ``vla`` env
 (no Isaac needed).
 
+**Frame alignment:** LeRobot rows are written as pre-step ``(s_t, a_t, r_t)``
+(state before action). Legacy HDF5 with missing/``post_step`` ``sa_align`` is
+realigned via ``inventory.recording.sa_align`` before ``add_frame``.
+
     conda run -n vla python scripts/experts/util/convert_lerobot.py --push
 """
 
@@ -15,6 +19,7 @@ import argparse
 import glob
 import os
 import shutil
+import sys
 
 # Accelerated LFS uploaders silently TRUNCATE large parquet -- disable pre-import.
 os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
@@ -25,6 +30,11 @@ import numpy as np
 
 # util/ -> experts/ -> scripts/ -> assembly_bench/
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+# project root (parent of assembly_bench) for inventory.recording.sa_align
+_PROJECT = os.path.dirname(ROOT)
+if _PROJECT not in sys.path:
+    sys.path.insert(0, _PROJECT)
+from inventory.recording.sa_align import maybe_realign_episode  # noqa: E402
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--glob", default=os.path.join(ROOT, "data", "hdf5", "*.hdf5"))
@@ -111,6 +121,18 @@ for hdf5 in files:
             held = o["held_part_pose"][:].astype(np.float32) if "held_part_pose" in o else None
             fixed = o["fixed_part_pose"][:].astype(np.float32) if "fixed_part_pose" in o else None
             reward = data[k]["reward"][:].astype(np.float32) if "reward" in data[k] else None
+            # Ensure pre_step (s_t, a_t, r_t); no-op if HDF5 already tagged.
+            extras = {"joint_vel": joint_vel, "eef_pos": eef_pos, "eef_quat": eef_quat,
+                      "wrist": wrist, "front": front}
+            if held is not None:
+                extras["held"] = held
+                extras["fixed"] = fixed
+            state, action, reward, extras, align = maybe_realign_episode(
+                state, action, reward, data[k].attrs, data.attrs, **extras)
+            joint_vel, eef_pos, eef_quat = extras["joint_vel"], extras["eef_pos"], extras["eef_quat"]
+            wrist, front = extras["wrist"], extras["front"]
+            held = extras.get("held")
+            fixed = extras.get("fixed")
             for t in range(len(state)):
                 frame = {
                     "observation.images.front": front[t],
@@ -129,7 +151,8 @@ for hdf5 in files:
                     frame["next.reward"] = np.asarray([reward[t]], dtype=np.float32)
                 ds.add_frame(frame)
             ds.save_episode()
-        print(f"wrote {len(demo_keys)} episodes from {os.path.basename(hdf5)}", flush=True)
+        print(f"wrote {len(demo_keys)} episodes from {os.path.basename(hdf5)} "
+              f"(last demo sa_align={align})", flush=True)
 
 ds.finalize()
 print(f"LeRobot dataset at {out_root}; tasks={len(tasks_written)} "

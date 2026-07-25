@@ -2,18 +2,18 @@
   {
     "env": "assembly-bench",
     "id": "assembly",
-    "slug": "peg_round_M1_loose",
+    "slug": "peg_round_8mm",
     "args": {
-      "task": "peg_round_M1_loose",
+      "task": "peg_round_8mm",
       "seed": 0
     }
   },
   {
     "env": "assembly-bench",
     "id": "assembly",
-    "slug": "peg_square_M2_loose",
+    "slug": "peg_square_12mm",
     "args": {
-      "task": "peg_square_M2_loose",
+      "task": "peg_square_12mm",
       "seed": 0
     }
   },

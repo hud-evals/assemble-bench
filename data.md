@@ -23,13 +23,13 @@ run_expert.py  (Isaac Sim, GPU)  ->  per-task HDF5  ->  convert_lerobot.py (vla 
 ```bash
 # inside the hud-assembly-env container, WORKDIR /app/assembly_bench
 /isaac-sim/python.sh scripts/experts/run_expert.py \
-  --headless --task peg_round_M1_loose \
+  --headless --task peg_round_8mm \
   --num_envs 8 --waves 40 --max_demos 50 \
-  --record data/hdf5/peg_round_M1_loose.hdf5
+  --record data/hdf5/peg_round_8mm.hdf5
 ```
 
 - `--task`: any key in `environments/assembly/variants.py::VARIANTS`
-  (`peg_{round,square}_{S,M1,M2,L}_loose`, `gear_{small,medium,large}`,
+  (`peg_{round,square}_{4,8,12,16}mm`, `gear_{small,medium,large}`,
   `nut_M{8,12,16,20}`, plus `debug`).
 - `--num_envs`: parallel envs (all recorded). `--waves`: reset cycles (each
   re-randomizes). `--max_demos N`: stop once N successful demos are banked.
@@ -108,7 +108,10 @@ and insert it into the hole"); LeRobot dedups identical strings into `total_task
 - **Teleport ghosting:** per-wave reset teleports parts, but DLAA keeps a temporal
   accumulation buffer the reset doesn't clear → a ghost of the previous episode
   survives the warmup. Fixed in the reset warmup (`tasks.py::settle_and_render`) by
-  toggling AA mode (FXAA→DLAA) to hard-reset the buffer. Check wave-1+ first frames.
+  toggling AA mode (FXAA→DLAA) with real FXAA *renders* (not just `app.update`),
+  then a post-DLAA `sim.step(render=True)` + `sensor.update(force_recompute)` so
+  every camera product (front_cam especially) is clean on tick 0. Check wave-1+
+  first frames on **both** cameras.
 - **eef_pos base frame** (see table) — subtract `env_origins` at record time.
 - **Success measured pre-reset**, episode length exceeds the scripted sequence, and
   per-env randomization (arm start, in-grip pose, part pose+yaw, phase timing).

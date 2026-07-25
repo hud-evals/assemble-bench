@@ -79,6 +79,31 @@
       "names": ["fixed.x", "fixed.y", "fixed.z", "fixed.qx", "fixed.qy", "fixed.qz", "fixed.qw"],
       "comment": "Privileged (PA-RL critic only); policy adapters must not consume."
     },
+    "policy/expert_active": {
+      "role": "observation",
+      "dtype": "float32",
+      "units": "none",
+      "shape": [1],
+      "names": ["expert_active"],
+      "comment": "1 when sim-side scripted expert has latched (ASSEMBLY_EXPERT_TAKEOVER); else 0. Injected by ExpertTakeover wrapper."
+    },
+    "policy/executed_action": {
+      "role": "observation",
+      "dtype": "float32",
+      "units": "mixed",
+      "shape": [8],
+      "names": [
+        "panda_joint1",
+        "panda_joint2",
+        "panda_joint3",
+        "panda_joint4",
+        "panda_joint5",
+        "panda_joint6",
+        "panda_joint7",
+        "gripper.open_close"
+      ],
+      "comment": "Command applied by env.step (expert when latched). HG-DAgger labels; not for the policy adapter."
+    },
     "action": {
       "role": "action",
       "state_type": "JOINT_ABS_POS",

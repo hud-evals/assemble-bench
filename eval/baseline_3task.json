@@ -2,9 +2,9 @@
   {
     "env": "assembly-bench",
     "id": "assembly",
-    "slug": "peg_round_M1_loose",
+    "slug": "peg_round_8mm",
     "args": {
-      "task": "peg_round_M1_loose",
+      "task": "peg_round_8mm",
       "seed": 0,
       "reward": "staged",
       "num_envs": 8

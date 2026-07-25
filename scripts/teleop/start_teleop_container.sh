@@ -6,7 +6,7 @@
 #
 # Usage:
 #   scripts/teleop/start_teleop_container.sh [task] [max_seconds]
-# Defaults: peg_round_8mm_loose, 14400 (4 h auto-stop).
+# Defaults: peg_round_8mm, 14400 (4 h auto-stop).
 #
 # Connect from the Isaac Sim WebRTC Streaming Client at the server's public IP
 # (TCP 49100 + UDP 47998 must be reachable). Keyboard, after clicking the
@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-TASK="${1:-peg_round_8mm_loose}"
+TASK="${1:-peg_round_8mm}"
 MAX_SECONDS="${2:-14400}"
 PUBLIC_IP="${PUBLIC_IP:-$(curl -s --max-time 5 ifconfig.me)}"
 # Livestream needs (a) a UI framebuffer to capture -> the full isaaclab.python

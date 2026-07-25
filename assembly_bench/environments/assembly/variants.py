@@ -1,7 +1,7 @@
 """The benchmark manifest: NIST-taskboard assembly variants as pure data.
 
 15 assembly variants (loose-clearance only) plus one DEBUG apple→bowl sanity
-check: peg-insert (round/square × S/M1/M2/L), gear-mesh (small/medium/large),
+check: peg-insert (round/square × 4/8/12/16 mm), gear-mesh (small/medium/large),
 and nut-thread (M8/M12/M16/M20). Each variant fully specifies the scene content
 (held / fixed / stand / extra assets and their poses) and the seat geometry that
 defines success. Kept free of Isaac imports so the CLI can list ``--task``
@@ -22,8 +22,8 @@ PEG_FIXED_POS = (0.37, 0.07, TABLE_TOP_Z)     # insertion hole / gear base
 PEG_HELD_POS = (0.37, -0.07, TABLE_TOP_Z)     # presentation stand / free part
 NUT_BASE_TOP = TABLE_TOP_Z + 0.009            # NIST GMC board top surface
 
-# Peg suite size codes → stem diameter (mm). Assets stay named by mm.
-PEG_SIZE_MM = {"S": 4, "M1": 8, "M2": 12, "L": 16}
+# Peg suite stem diameters (mm). Task IDs use these directly (peg_round_8mm).
+PEG_SIZES_MM = (4, 8, 12, 16)
 
 # Gear shaft x-offsets from the gear-base root (re-centered gen_gear USDs).
 GEAR_SHAFT = {"small": 0.05075, "medium": 0.02025, "large": -0.03025}
@@ -59,22 +59,24 @@ class AssemblyVariant:
     episode_length_s: float = 32.0
 
 
-def _peg(size_code: str, geometry: str) -> AssemblyVariant:
+def _peg(size_mm: int, geometry: str) -> AssemblyVariant:
     """One peg-insert instance (loose clearance). 'square' pegs are rectangular
     (USD stem 'rect'), so they are not yaw-symmetric: the hole gets yaw jitter
     the policy must match."""
-    size = PEG_SIZE_MM[size_code]
     stem = {"round": "round", "square": "rect"}[geometry]
     return AssemblyVariant(
         family="peg_insert",
-        instruction=f"pick up the {size} mm {geometry} peg and insert it into the hole",
-        held=f"asm_peg_{stem}_{size}mm_loose",
-        fixed=f"asm_hole_{stem}_{size}mm",
-        stand=f"asm_hole_{stem}_{size}mm",   # a second bore presents the peg upright
+        instruction=f"pick up the {size_mm} mm {geometry} peg and insert it into the hole",
+        held=f"asm_peg_{stem}_{size_mm}mm_loose",
+        fixed=f"asm_hole_{stem}_{size_mm}mm",
+        stand=f"asm_hole_{stem}_{size_mm}mm",   # a second bore presents the peg upright
         held_pos=PEG_HELD_POS,
         fixed_pos=PEG_FIXED_POS,
         rand_fixed_yaw=0.6 if geometry == "square" else 0.0,
-        held_friction=1.0,  # pad grip (default 0.75 was too slippery for pick)
+        # Metal-ish peg; grip comes from pad μ (see PAD_FRICTION), not part μ.
+        held_friction=0.5,
+        # 40 s @ 15 Hz = 600 ticks — room for slow recover/seat (was 32 s / 480).
+        episode_length_s=40.0,
     )
 
 
@@ -103,9 +105,9 @@ def _gear(size: str) -> AssemblyVariant:
 
 VARIANTS: dict[str, AssemblyVariant] = {}
 
-for _code in ("S", "M1", "M2", "L"):
+for _size_mm in PEG_SIZES_MM:
     for _geom in ("round", "square"):
-        VARIANTS[f"peg_{_geom}_{_code}_loose"] = _peg(_code, _geom)
+        VARIANTS[f"peg_{_geom}_{_size_mm}mm"] = _peg(_size_mm, _geom)
 
 for _k in ("small", "medium", "large"):
     VARIANTS[f"gear_{_k}"] = _gear(_k)

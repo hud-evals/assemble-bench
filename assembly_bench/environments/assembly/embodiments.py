@@ -118,12 +118,10 @@ def apply_assembly_droid_tuning(embodiment: Any) -> None:
     robot.spawn.articulation_props.solver_velocity_iteration_count = 8
     robot.spawn.articulation_props.solver_position_iteration_count = 192
 
-    # Compliant arm ("arm gives, gripper stays"): soften PD so an off-center
-    # pad contact yields the arm a few mm instead of knocking the peg away.
-    # Forearm/wrist is softer than the shoulder -- that is the joint chain
-    # that absorbs lateral pad force during grasp. Absolute joint *targets*
-    # in the recorded dataset are unchanged; only contact tracking gives.
-    # Restore real panda joint-speed limits and add armature to damp jitter.
+    # Compliant arm for pi0.5 grip ("arm gives, gripper stays"): soft PD so
+    # off-center pad contact yields a few mm instead of knocking the peg away.
+    # Scripted-expert insert seating needs firmer 150/40 — pass --arm_stiffness
+    # 150 --arm_damping 40 from run_expert / record_rewards_*.sh only.
     for name, vlim, stiff, damp in (
         ("panda_shoulder", 2.175, 100.0, 28.0),  # was 400/80 stock, then 150/40
         ("panda_forearm", 2.61, 50.0, 18.0),     # softer wrist for pad give
@@ -133,12 +131,9 @@ def apply_assembly_droid_tuning(embodiment: Any) -> None:
         robot.actuators[name].stiffness = stiff
         robot.actuators[name].damping = damp
 
-    # Firm finger drive: stock leaves stiffness/damping None (USD-native). Explicit
-    # high PD + effort so the pad clamps instead of mushing (~17 sank into parts).
-    grip = robot.actuators["gripper"]
-    grip.stiffness = 200.0
-    grip.damping = 40.0
-    grip.effort_limit_sim = 200.0
+    # Gripper finger drive stays USD-native (stiff 100, damp ~0, maxForce 16.5).
+    # Do not override with high PD/effort — that drove through the underactuated
+    # linkage and broke scripted-expert microlift clamp on round pegs.
 
     # Joint velocities alongside joint positions in the policy obs (recorded to
     # HDF5 via the flat policy-obs recorder term).

@@ -7,7 +7,7 @@
 #
 # Usage:
 #   scripts/teleop/start_record_container.sh [task] [num_demos] [dataset_file]
-# Defaults: peg_round_8mm_loose, 10 demos,
+# Defaults: peg_round_8mm, 10 demos,
 #           data/teleop/<task>_dik_<UTC timestamp>.hdf5 (repo mount -> host).
 #
 # Connect the Isaac Sim WebRTC client to this host's public IP. Keyboard:
@@ -16,7 +16,7 @@
 
 set -euo pipefail
 
-TASK="${1:-peg_round_8mm_loose}"
+TASK="${1:-peg_round_8mm}"
 NUM_DEMOS="${2:-10}"
 DATASET="${3:-data/teleop/${TASK}_dik_$(date -u +%Y%m%d_%H%M%S).hdf5}"
 MAX_SECONDS="${MAX_SECONDS:-14400}"

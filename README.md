@@ -16,11 +16,11 @@ stand holding the free part, and the fixture it must be assembled into.
 ## Task space
 
 15 loose-clearance variants across 3 families, plus a DEBUG apple→bowl check
-(`debug`). Peg sizes use suite codes `S/M1/M2/L` (4/8/12/16 mm):
+(`debug`). Peg sizes are stem diameters in mm (`4/8/12/16`):
 
 | family | variants | goal |
 |---|---|---|
-| `peg_insert` | 8: `peg_{round,square}_{S,M1,M2,L}_loose` | pick the peg off its stand bore, insert it into the matching hole |
+| `peg_insert` | 8: `peg_{round,square}_{4,8,12,16}mm` | pick the peg off its stand bore, insert it into the matching hole |
 | `gear_mesh` | 3: `gear_{small,medium,large}` | mesh the held gear onto its shaft between two fixed gears (tooth-phase alignment) |
 | `nut_thread` | 4: `nut_M{8,12,16,20}` | thread the nut onto the bolt on the NIST GMC board (helical descent; a straight push jams) |
 
@@ -81,7 +81,7 @@ python isaaclab_arena/evaluation/policy_runner.py \
     --policy_type zero_action --num_episodes 1 \
     --external_environment_class_path \
     assembly_bench.environments.assembly.assembly:AssemblyBenchEnvironment \
-    assembly_bench --task peg_round_M1_loose
+    assembly_bench --task peg_round_8mm
 ```
 
 `--task` selects the variant; `--embodiment` defaults to

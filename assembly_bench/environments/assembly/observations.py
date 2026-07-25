@@ -35,3 +35,25 @@ def part_pose(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch.Tensor
 
 # Alias used by assembly.py privileged ObsTerm wiring.
 asset_root_pose = part_pose
+
+
+def expert_active(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Per-env 0/1: scripted expert has latched (set by ExpertTakeover wrapper)."""
+    n, dev = env.num_envs, env.device
+    flag = getattr(env, "_expert_takeover_active", None)
+    if flag is None or not isinstance(flag, torch.Tensor) or flag.shape[0] != n:
+        return torch.zeros(n, 1, device=dev)
+    return flag.to(device=dev, dtype=torch.float32).view(n, 1)
+
+
+def executed_action(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Action that ``env.step`` actually applied (expert override when latched).
+
+    Set by ``ExpertTakeover``; zeros before the first step. HG-DAgger recording
+    uses this so labels are expert actions, not the discarded policy chunk.
+    """
+    n, dev = env.num_envs, env.device
+    act = getattr(env, "_expert_executed_action", None)
+    if act is None or not isinstance(act, torch.Tensor) or act.shape[0] != n:
+        return torch.zeros(n, 8, device=dev)
+    return act.to(device=dev, dtype=torch.float32).view(n, -1)[:, :8]

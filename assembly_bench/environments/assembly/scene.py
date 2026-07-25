@@ -62,7 +62,8 @@ def _register(name: str, usd: str, *, mass: float | None = None, impulse_cap: fl
     articulation root and spawns an immovable rigid body instead."""
     spawn: dict = {
         "mass_props": sim_utils.MassPropertiesCfg(mass=mass) if mass is not None else None,
-        # Tighter contact skin (was 0.005) — less early pad push before true clamp.
+        # Contact skin. 0.001 paired with soft arm for pi0.5; expert recording
+        # firms the arm via --arm_stiffness rather than widening this again.
         "collision_props": sim_utils.CollisionPropertiesCfg(contact_offset=0.001, rest_offset=0.0),
     }
     if kinematic:
@@ -137,17 +138,27 @@ DEBUG_DIR = PARTS_DIR / "debug"
 
 @register_asset
 class AsmDebugApple(LibraryObject):
-    """DEBUG: RoboLab ``apple_01`` (scaled to ~7 cm)."""
+    """DEBUG: RoboLab ``apple_01`` (~7 cm). Pick-place contact skin, not peg."""
 
     name = "asm_debug_apple"
     tags = ["object", "debug"]
     usd_path = str(DEBUG_DIR / "apple_01.usd")
     object_type = ObjectType.RIGID
+    # Spawner ignores USD's baked 0.01 xform; this is the only scale that applies.
     scale = (0.01, 0.01, 0.01)
     spawn_cfg_addon = {
-        "rigid_props": RIGID_BODY_PROPS_HIGH_PRECISION,
+        # RoboLab pick-place skin (20 mm), not peg 1 mm — fat contact stops binary
+        # grip from digging into convex-decomp hulls. Mild depenetration + lin-vel
+        # cap remain as eject guards (normal grasp << 1 m/s).
+        "rigid_props": RIGID_BODY_PROPS_HIGH_PRECISION.replace(
+            solver_velocity_iteration_count=8,
+            max_depenetration_velocity=1.0,
+            max_linear_velocity=2.0,
+        ),
         "mass_props": sim_utils.MassPropertiesCfg(mass=0.15),
-        "collision_props": sim_utils.CollisionPropertiesCfg(contact_offset=0.005, rest_offset=0.0),
+        "collision_props": sim_utils.CollisionPropertiesCfg(
+            contact_offset=0.02, rest_offset=0.01
+        ),
     }
 
 
@@ -166,5 +177,8 @@ class AsmDebugBowl(LibraryObject):
             solver_position_iteration_count=16, solver_velocity_iteration_count=1,
         ),
         "mass_props": sim_utils.MassPropertiesCfg(mass=0.2),
-        "collision_props": sim_utils.CollisionPropertiesCfg(contact_offset=0.005, rest_offset=0.0),
+        # Match apple pick-place skin (kinematic CCD is ignored by PhysX).
+        "collision_props": sim_utils.CollisionPropertiesCfg(
+            contact_offset=0.02, rest_offset=0.01
+        ),
     }

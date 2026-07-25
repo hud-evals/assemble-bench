@@ -10,10 +10,10 @@ mkdir -p "$LOGDIR" "$CACHE"/{kit,ov,glcache,computecache,pip,warp,logs}
 docker rm -f assembly-expert assembly-env smoke-rewards 2>/dev/null || true
 
 TASKS=(
-  peg_round_8mm_loose
-  peg_square_8mm_loose
+  peg_round_8mm
+  peg_square_8mm
   gear_medium
-  nut_m16_loose
+  nut_M16
 )
 
 NUM_ENVS="${NUM_ENVS:-4}"

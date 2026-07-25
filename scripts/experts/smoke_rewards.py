@@ -3,7 +3,7 @@
 Supports ``--reward staged`` (new-best) and ``--reward potential`` (Φ diff).
 
     /isaac-sim/python.sh scripts/experts/smoke_rewards.py \
-        --headless --task peg_round_M1_loose --num_envs 4 \
+        --headless --task peg_round_8mm --num_envs 4 \
         --disable_cameras --no_stream --reward potential
 """
 

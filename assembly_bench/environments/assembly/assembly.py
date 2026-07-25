@@ -8,7 +8,7 @@ selected via ``--task``. Run with, e.g.::
         --policy_type zero_action --num_episodes 1 \\
         --external_environment_class_path \\
         assembly_bench.environments.assembly.assembly:AssemblyBenchEnvironment \\
-        assembly_bench --task peg_round_M1_loose
+        assembly_bench --task peg_round_8mm
 """
 
 import argparse
@@ -31,17 +31,19 @@ def assembly_bench_env_cfg_callback(env_cfg):
     env_cfg = mdp.assembly_env_cfg_callback(env_cfg)
     env_cfg.decimation = 4
     env_cfg.sim.render_interval = env_cfg.decimation
-    # Grasp reliability: "max" friction combine takes the higher of the two
-    # contacting materials' coefficients, so the grippy part (held_friction up to
-    # 1.0) governs the pad contact regardless of the pad material -- the Isaac Lab
-    # consensus fix for objects slipping out of a grasp (default "average" dilutes
-    # a high part friction against a low pad friction).
+    # Grasp reliability: "max" takes the higher of the two contacting μ's, so
+    # rubber pads (PAD_FRICTION≈1.2) win over a metal-ish peg (held≈0.7)
+    # without inventing an unrealistic peg μ. Default "average" would dilute
+    # the pad against the part.
     env_cfg.sim.physics_material.friction_combine_mode = "max"
     # Contact-velocity iterations: Arena ships max_velocity_iteration_count=1,
     # which under-resolves contact velocities -- a hard ram into the table then
     # diverges (joint vels blow to 1e30+). Raise it so TGS actually damps the
     # contact velocity and ramming stays bounded.
     env_cfg.sim.physics.max_velocity_iteration_count = 4
+    # CCD: RoboLab pick-place default. Helps fast contacts / tunneling; kinematic
+    # sockets ignore it (PhysX warning only). Pegs keep their thin object skin.
+    env_cfg.sim.physics.enable_ccd = True
     # DLAA (native-res temporal AA): its history is also the denoiser -- FXAA
     # A/B measured temporal grain ~3.0 vs DLAA's ~0.15 (unusable boil), and
     # per-frame knobs (spp, DL denoiser) proved inert at runtime. The per-wave
@@ -163,6 +165,18 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
             func=asset_root_pose, params={"asset_cfg": SceneEntityCfg("held_part")})
         embodiment.observation_config.policy.fixed_part_pose = ObsTerm(
             func=asset_root_pose, params={"asset_cfg": SceneEntityCfg("fixed_part")})
+        # CG-DAgger latch bit (buffer filled by ExpertTakeover wrapper).
+        if getattr(args_cli, "expert_takeover", False):
+            from assembly_bench.environments.assembly.observations import (
+                executed_action,
+                expert_active,
+            )
+
+            embodiment.observation_config.policy.expert_active = ObsTerm(func=expert_active)
+            # Applied command (expert when latched) for HG-DAgger labels.
+            embodiment.observation_config.policy.executed_action = ObsTerm(
+                func=executed_action
+            )
 
         task = NISTAssemblyTask(variant=variant, held=held, fixed=fixed, stand=stand, extras=extras,
                                 reward_mode=getattr(args_cli, "reward", None))
@@ -208,7 +222,7 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
 
     @staticmethod
     def add_cli_args(parser: argparse.ArgumentParser) -> None:
-        parser.add_argument("--task", type=str, default="peg_round_M1_loose", choices=sorted(VARIANTS))
+        parser.add_argument("--task", type=str, default="peg_round_8mm", choices=sorted(VARIANTS))
         # DROID platform (Franka + Robotiq 2F-85) with absolute joint-position
         # actions -- the source benchmark's droid_jointpos / pi0.5-DROID contract.
         # The _softmimic variant adds the benchmark's contact-stability tuning
@@ -222,6 +236,9 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
         # "none" keeps the env reward-free for eval.
         parser.add_argument("--reward", type=str, default="none",
                             choices=["none", "staged", "potential"])
+        # CG-DAgger: sim-side grasp-fail → peg scripted expert (see expert_takeover.py).
+        parser.add_argument("--expert_takeover", action="store_true",
+                            help="latch grasp-fail and override with the peg scripted expert")
         # Teleop demo collection (Arena teleop.py / record_demos.py read this).
         # Requires --embodiment droid_differential_ik; default None keeps eval/
         # training paths teleop-free (no retargeter exists for abs joint pos).
@@ -231,19 +248,26 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
 
 
 def make_assembly_env(
-    task: str = "peg_round_M1_loose",
+    task: str = "peg_round_8mm",
     num_envs: int = 1,
     embodiment: str = "droid_abs_joint_pos_softmimic",
     hdr: str = "asm_machine_shop",
     light_intensity: float = 1500.0,
     reward: str = "none",
+    expert_takeover: bool = False,
+    takeover_mode: str = "grasp",
 ):
     """Build the assembly Arena gym env for one variant (the Isaac app must be up).
 
     Shared factory for the HUD server (``env.py``) / ``train.rl`` collect path.
     ``reward="staged"|"potential"`` turns on dense shaping; "none" (default) keeps
-    the env reward-free for eval. ``num_envs`` is the vectorization width.
+    the env reward-free for eval. ``expert_takeover`` wraps peg-insert envs so a
+    fail latch (grasp and/or insert, see ``takeover_mode``) overrides policy
+    actions with the scripted expert (HUD video stays continuous). ``num_envs``
+    is the vectorization width.
     """
+    import os
+
     import carb
     from isaaclab_arena.cli.isaaclab_arena_cli import (
         arena_env_builder_cfg_from_argparse,
@@ -256,6 +280,9 @@ def make_assembly_env(
     # so a mid-run rebuild short-circuits instead of erroring.
     carb.settings.get_settings().set_int("/omni/replicator/globalSeed", 42)
 
+    # Mode from arg, else ASSEMBLY_TAKEOVER_MODE (grasp|insert|both).
+    mode = (takeover_mode or os.environ.get("ASSEMBLY_TAKEOVER_MODE", "grasp")).strip().lower()
+
     parser = get_isaaclab_arena_cli_parser()
     AssemblyBenchEnvironment.add_cli_args(parser)
     args, _ = parser.parse_known_args([])
@@ -263,6 +290,13 @@ def make_assembly_env(
     args.light_intensity, args.enable_cameras = light_intensity, True
     args.num_envs = num_envs
     args.reward = reward
+    args.expert_takeover = bool(expert_takeover)
     arena_env = AssemblyBenchEnvironment().get_env(args)
     builder_cfg = arena_env_builder_cfg_from_argparse(args)
-    return ArenaEnvBuilder(arena_env, builder_cfg).make_registered(render_mode="rgb_array")
+    env = ArenaEnvBuilder(arena_env, builder_cfg).make_registered(render_mode="rgb_array")
+    if expert_takeover:
+        from assembly_bench.environments.assembly.expert_takeover import ExpertTakeover
+
+        env = ExpertTakeover(env, task=task, takeover_mode=mode)
+        print(f"[env] expert_takeover ON for {task} (mode={mode})", flush=True)
+    return env

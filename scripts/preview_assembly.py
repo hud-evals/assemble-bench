@@ -5,7 +5,7 @@ let physics settle, then saves the policy cameras (front + wrist, 224x224) and
 prints part positions and per-channel color stats (catches black/grayscale
 renders):
 
-    python scripts/preview_assembly.py --task peg_round_M1_loose --out /tmp/peg
+    python scripts/preview_assembly.py --task peg_round_8mm --out /tmp/peg
 """
 
 import argparse

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Record peg_round_8mm_loose demos with staged reward + privileged poses
+# Record peg_round_8mm demos with staged reward + privileged poses
 # (success + failure) for PA-RL critic pretrain → assembly_bench_rewards.
 #
 # IMPORTANT: --record must be under /app/assembly_bench (the docker mount).
@@ -9,9 +9,9 @@ set -euo pipefail
 
 CACHE=/home/ubuntu/docker/isaac-expert-cache
 HOST_DIR=/home/ubuntu/project/assembly_bench/data/hdf5
-HOST_HDF5="$HOST_DIR/peg_round_8mm_loose_rewards.hdf5"
+HOST_HDF5="$HOST_DIR/peg_round_8mm_rewards.hdf5"
 # In-container path on the bind mount (literal — do not pass a host path).
-CTR_HDF5=/app/assembly_bench/data/hdf5/peg_round_8mm_loose_rewards.hdf5
+CTR_HDF5=/app/assembly_bench/data/hdf5/peg_round_8mm_rewards.hdf5
 LOGDIR=/home/ubuntu/outputs/reward_demos
 mkdir -p "$LOGDIR" "$HOST_DIR" "$CACHE"/{kit,ov,glcache,computecache,pip,warp,logs}
 
@@ -22,7 +22,7 @@ WAVES="${WAVES:-40}"
 docker rm -f assembly-expert assembly-env smoke-rewards 2>/dev/null || true
 rm -f "$HOST_HDF5"
 
-echo "======== RECORD rewards peg_round_8mm_loose n=$MAX_DEMOS ========"
+echo "======== RECORD rewards peg_round_8mm n=$MAX_DEMOS ========"
 echo "record path (container): $CTR_HDF5"
 echo "host mount:              $HOST_HDF5"
 
@@ -44,20 +44,21 @@ docker run --name assembly-expert \
   -w /app/assembly_bench \
   hud-assembly-env \
   /isaac-sim/python.sh scripts/experts/run_expert.py \
-    --headless --task peg_round_8mm_loose \
+    --headless --task peg_round_8mm \
     --num_envs "$NUM_ENVS" --waves "$WAVES" --max_demos "$MAX_DEMOS" \
     --keep_failures --reward staged --no_stream \
-    --record /app/assembly_bench/data/hdf5/peg_round_8mm_loose_rewards.hdf5 \
+    --record /app/assembly_bench/data/hdf5/peg_round_8mm_rewards.hdf5 \
+    --arm_stiffness 150 --arm_damping 40 \
     --reset_warmup_steps 8 --reset_rt_subframes 1 \
-    2>&1 | tee "$LOGDIR/peg_round_8mm_loose_rewards.log"
+    2>&1 | tee "$LOGDIR/peg_round_8mm_rewards.log"
 
 # Prefer the bind-mounted file; fall back to docker cp from either path.
 if [[ -f "$HOST_HDF5" ]]; then
   ls -lh "$HOST_HDF5"
 else
   echo "WARN: mount path empty — docker cp rescue"
-  docker cp assembly-expert:/app/assembly_bench/data/hdf5/peg_round_8mm_loose_rewards.hdf5 "$HOST_HDF5" \
-    || docker cp assembly-expert:/home/ubuntu/project/assembly_bench/data/hdf5/peg_round_8mm_loose_rewards.hdf5 "$HOST_HDF5"
+  docker cp assembly-expert:/app/assembly_bench/data/hdf5/peg_round_8mm_rewards.hdf5 "$HOST_HDF5" \
+    || docker cp assembly-expert:/home/ubuntu/project/assembly_bench/data/hdf5/peg_round_8mm_rewards.hdf5 "$HOST_HDF5"
   ls -lh "$HOST_HDF5"
 fi
 docker rm -f assembly-expert 2>/dev/null || true
