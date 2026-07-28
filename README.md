@@ -35,26 +35,41 @@ plumbing works, not part of the benchmark.
 
 - NVIDIA GPU with RT cores – 16 GB+ for the simulator, 24 GB+ if a VLA shares the same GPU
   (datacenter cards without RT cores, such as A100 and H100, cannot render)
-- Ubuntu 22.04+ (Isaac Sim 6 wheels need GLIBC >= 2.35)
-- Isaac Sim 6.x and Python 3.10+
-- `OMNI_KIT_ACCEPT_EULA=YES` in the environment
+- Ubuntu 22.04+ (Isaac Sim 6 needs GLIBC >= 2.35)
+- [Isaac Sim 6.x](https://docs.isaacsim.omniverse.nvidia.com/current/installation/download.html)
+  (NGC image `nvcr.io/nvidia/isaac-sim:6.0.0` or a local install)
+- `export OMNI_KIT_ACCEPT_EULA=YES` in every shell that launches Isaac
+
+Path B's agent side also needs a normal Python 3.10+ env (separate from Isaac) and a
+Hugging Face login that has accepted
+[`google/paligemma-3b-pt-224`](https://huggingface.co/google/paligemma-3b-pt-224)
+(the pi0.5 tokenizer is gated; the checkpoints themselves are public).
 
 ## Install
 
 ```bash
 git clone https://github.com/hud-evals/assembly_bench.git
 cd assembly_bench
-git submodule update --init --recursive        # IsaacLab-Arena (+ its pinned IsaacLab)
 
-# Into your Isaac Sim python environment:
-for d in submodules/IsaacLab-Arena/submodules/IsaacLab/source/isaaclab*/; do
-    pip install --no-deps -e "$d"
-done
-pip install -e submodules/IsaacLab-Arena
-pip install -e assembly_bench
+# Inside your Isaac Sim environment (conda env, NGC container, or /isaac-sim/python.sh):
+export OMNI_KIT_ACCEPT_EULA=YES
+./scripts/setup_sim.sh              # Arena submodule + Isaac Lab + this package
+./scripts/setup_sim.sh --with-hud   # same, plus hud-python for Path B
 ```
 
-Arena stays an unmodified submodule; this repo plugs into it through its registration API.
+`setup_sim.sh` fetches the [Isaac Lab Arena](https://github.com/isaac-sim/IsaacLab-Arena)
+submodule (and its pinned IsaacLab), installs both editable, then installs
+`assembly_bench`. Arena stays unmodified; this repo plugs in through its registration API.
+
+For Path B's VLA agent, in a **separate** Python 3.10+ environment:
+
+```bash
+./scripts/setup_agent.sh            # lerobot, hud-python, torch, …
+hf auth login                       # after accepting the PaliGemma gate above
+```
+
+No Isaac Sim on the host? Skip `setup_sim.sh` and serve via Docker instead – see Path B
+and [`docker/docker.md`](docker/docker.md).
 
 ## Running the benchmark
 
@@ -64,15 +79,16 @@ VLAs, parallel envs, and optional per-episode traces.
 
 ### Path A – Isaac Sim directly
 
-Nothing to install beyond the Install section. From `submodules/IsaacLab-Arena`, using
-Arena's external-environment CLI:
+Smoke-test that the scene builds (zero actions, no model weights). From the repo root,
+with the Isaac env active:
 
 ```bash
-python isaaclab_arena/evaluation/policy_runner.py \
-    --policy_type zero_action --num_episodes 1 \
+cd submodules/IsaacLab-Arena
+OMNI_KIT_ACCEPT_EULA=YES python isaaclab_arena/evaluation/policy_runner.py \
+    --policy_type zero_action --num_episodes 1 --headless \
     --external_environment_class_path \
     assembly_bench.environments.assembly.assembly:AssemblyBenchEnvironment \
-    assembly_bench --task peg_round_8mm --headless
+    assembly_bench --task peg_round_8mm
 ```
 
 | Flag | Default | Notes |
@@ -83,31 +99,49 @@ python isaaclab_arena/evaluation/policy_runner.py \
 | `--hdr` | `asm_machine_shop` | any Arena HDR registry name, or `none` |
 | `--num_envs` | `1` | parallel envs on one GPU |
 
+Or render stills of both policy cameras:
+
+```bash
+OMNI_KIT_ACCEPT_EULA=YES python scripts/preview_assembly.py --task peg_round_8mm --out /tmp/peg
+# → /tmp/peg_front.png, /tmp/peg_wrist.png  (log should say COLOR OK)
+```
+
 ### Path B – HUD
 
 Serve the environment once, then attach a policy over TCP. The simulator and the policy
 can live in different environments (or on different machines).
 
-**1. Serve the env**
+**1. Serve the env** (pick one)
+
+Host Isaac (after `./scripts/setup_sim.sh --with-hud`):
 
 ```bash
-pip install hud-python          # into the Isaac Sim environment
 OMNI_KIT_ACCEPT_EULA=YES python -m hud.environment.server env.py --port 8765
 ```
 
-Wait for `HUD_SERVE_PORT=8765` (boot takes a few minutes). Prefer not to install Isaac Sim
-on the host? Use the self-contained image in [`docker/docker.md`](docker/docker.md).
+Or Docker (no host Isaac install – build from this repo alone):
 
-**2. Run a VLA**
+```bash
+# details + cache mounts: docker/docker.md
+docker build -f docker/Dockerfile -t hud-assembly-env .
+docker run -d --name assembly-env --gpus all \
+  -e NVIDIA_DRIVER_CAPABILITIES=all -e OMNI_KIT_ACCEPT_EULA=YES \
+  -p 127.0.0.1:8765:8765 hud-assembly-env
+```
+
+Wait for `HUD_SERVE_PORT=8765` in the logs (first boot can take 5–15 minutes).
+
+**2. Run a VLA** (agent env from `./scripts/setup_agent.sh`)
 
 The wire is DROID: front + wrist RGB at 640×360, joint positions, 8-D action (7 joint
 targets + binary gripper) at 15 Hz. [`examples/`](examples/) loads our final pi0.5
-checkpoint from Hugging Face and evaluates a task:
+checkpoint from Hugging Face:
 
 ```bash
-pip install -r examples/requirements.txt   # into a separate agent environment
 python examples/run_eval.py --task peg_round_16mm --num-envs 4
 ```
+
+First run downloads ~9 GB of weights.
 
 | Flag | Default | Notes |
 |---|---|---|
@@ -134,18 +168,10 @@ Without the key, nothing is sent anywhere.
 
 ## Test your install
 
-**Quick check (no model weights, ~1 min after boot).** Renders both policy cameras and
-prints where every part settled:
-
-```bash
-python scripts/preview_assembly.py --task peg_round_8mm --out /tmp/peg
-```
-
-You should get `/tmp/peg_front.png` and `/tmp/peg_wrist.png` with `COLOR OK` in the log.
-
-**Full check.** Run a real policy against a real task: [`examples/`](examples/) pulls our
-final pi0.5 checkpoint from Hugging Face and evaluates it on `peg_round_16mm`, optionally
-streaming to the HUD platform.
+| Check | Command | Expect |
+|---|---|---|
+| Quick (Path A, no weights) | `python scripts/preview_assembly.py --task peg_round_8mm --out /tmp/peg` | two PNGs, `COLOR OK` |
+| Full (Path B + pi0.5) | serve env, then `python examples/run_eval.py --task peg_round_16mm --num-envs 2` | episodes grade; optional job URL if `HUD_API_KEY` is set |
 
 ## Additional information
 
@@ -153,14 +179,15 @@ streaming to the HUD platform.
 
 ```
 assembly_bench/
+├── scripts/setup_sim.sh     install Arena + this package into Isaac Sim Python
+├── scripts/setup_agent.sh   install Path B VLA deps into a normal Python
+├── requirements-agent.txt   agent-side pip deps (Path B)
 ├── assembly_bench/          the pip-installable Arena environment package
 │   ├── environments/assembly/   variants.py (the task catalog), scene, tasks, rewards
 │   └── assets/parts/            pegs, gears, nuts, NIST board
-├── examples/                pi0.5 VLA + eval runner (start here)
+├── examples/                pi0.5 VLA + eval runner
 ├── tasks/                   HUD run lists
-├── scripts/                 preview, taskset regeneration, scripted experts
-├── agents/                  LLM tool path (in development)
-├── docker/                  self-contained Isaac + HUD image
+├── docker/                  self-contained Isaac + HUD image (build from this repo)
 ├── env.py, contract.json    HUD entry point and its observation/action wire
 └── submodules/IsaacLab-Arena    unmodified Arena (git submodule)
 ```

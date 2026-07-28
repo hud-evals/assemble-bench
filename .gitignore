@@ -1,9 +1,12 @@
 __pycache__/
 *.egg-info/
 .pytest_cache/
-submodules/
 .venv/
 data/
 .hud_eval.toml
 # NvStreamer WebRTC trace logs (written to CWD by the livestream stack)
 *.etli
+
+# Allow the Arena gitlink; ignore anything else dropped under submodules/.
+submodules/*
+!submodules/IsaacLab-Arena

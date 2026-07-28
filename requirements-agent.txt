@@ -1,0 +1,13 @@
+# Agent-side deps for Path B (examples/run_eval.py).
+# Install into a normal Python 3.10+ env — NOT the Isaac Sim environment.
+# The simulator and the policy talk over TCP and can live on different machines.
+
+torch>=2.6
+lerobot[pi]>=0.6.0
+hud-python>=0.6.10
+
+# Robot capability wire. Missing these fails late: without `av` a rollout dies
+# mid-run; without openpi-client/msgpack the agent errors at import.
+av
+msgpack
+openpi-client>=0.1.2

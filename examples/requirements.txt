@@ -1,13 +1,2 @@
-# Agent-side dependencies for examples/run_eval.py. Install these in a normal
-# Python 3.10+ environment — NOT the Isaac Sim environment that serves env.py.
-# The two talk over TCP, so they can live on different machines.
-
-torch>=2.6
-lerobot[pi]>=0.6.0
-hud-python>=0.6.0
-
-# Robot capability wire. Missing these fails late: without `av` a rollout dies
-# mid-run, without openpi-client/msgpack the agent errors at import.
-av
-msgpack
-openpi-client>=0.1.2
+# Thin wrapper — the canonical agent deps live at the repo root.
+-r ../requirements-agent.txt

@@ -10,11 +10,11 @@ starting point for your own agent.
 ## Setup
 
 The agent and the simulator are separate processes that talk over TCP, so they need
-separate environments – and can live on separate machines. Install the agent side into
-any Python 3.10+ environment:
+separate environments – and can live on separate machines. From the repo root, in any
+Python 3.10+ environment (not Isaac):
 
 ```bash
-pip install -r examples/requirements.txt
+./scripts/setup_agent.sh        # or: pip install -r requirements-agent.txt
 ```
 
 The pi0.5 tokenizer is gated even though the checkpoints are public, so accept
