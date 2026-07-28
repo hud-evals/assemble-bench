@@ -9,6 +9,7 @@ Then::
 
     hud eval tasks/vla/all.json <agent> --full --runtime tcp://127.0.0.1:8765
     hud eval tasks/vla/smoke.json <agent> --runtime tcp://127.0.0.1:8765
+    hud eval tasks/vla/debug.json <agent> --runtime tcp://127.0.0.1:8765
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from assembly_bench.environments.assembly.variants import VARIANTS
 ROOT = Path(__file__).resolve().parents[1]
 ENV = "assembly-bench"
 
-# Small first-run subset: one variant per family.
+# Small first-run subset: one variant per NIST family (excludes smoke debug).
 SMOKE = ("peg_round_8mm", "gear_medium", "nut_M16")
 
 
@@ -32,30 +33,24 @@ def _write(path: Path, rows: list[dict]) -> Path:
     return path
 
 
+def _vla_row(name: str, seed: int = 0) -> dict:
+    return {
+        "env": ENV,
+        "id": "assembly",
+        "slug": name,
+        "args": {"task": name, "seed": seed},
+    }
+
+
 def export_vla(*, seed: int = 0) -> None:
     """VLA template ``assembly`` — joint-position openpi wire."""
-    all_rows = [
-        {
-            "env": ENV,
-            "id": "assembly",
-            "slug": name,
-            "args": {"task": name, "seed": seed},
-        }
-        for name in sorted(VARIANTS)
-    ]
-    _write(ROOT / "tasks" / "vla" / "all.json", all_rows)
-
-    smoke_rows = [
-        {
-            "env": ENV,
-            "id": "assembly",
-            "slug": name,
-            "args": {"task": name, "seed": seed},
-        }
-        for name in SMOKE
-        if name in VARIANTS
-    ]
-    _write(ROOT / "tasks" / "vla" / "smoke.json", smoke_rows)
+    _write(ROOT / "tasks" / "vla" / "all.json",
+           [_vla_row(name, seed) for name in sorted(VARIANTS)])
+    _write(ROOT / "tasks" / "vla" / "smoke.json",
+           [_vla_row(name, seed) for name in SMOKE if name in VARIANTS])
+    # Hello-world pick-place (not NIST).
+    if "debug" in VARIANTS:
+        _write(ROOT / "tasks" / "vla" / "debug.json", [_vla_row("debug", seed)])
 
 
 def export_agent(*, seed: int = 0) -> None:

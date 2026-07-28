@@ -76,7 +76,8 @@ class Servo:
 
     #: Flange (base_link) -> fingertip plane along the tool axis. MEASURED on
     #: this USD by descending a closed gripper onto the peg until first contact
-    #: (run_expert --calib_toollen): 0.1717. The 2F-85 spec value (0.1628) is
+    #: this USD by descending a closed gripper onto the peg until first contact:
+    #: 0.1717. The 2F-85 spec value (0.1628) is
     #: 9 mm short here. The ee_frame's tool_*finger frames are crank-mounted
     #: and are not the physical pinch center.
     TOOL_LEN = 0.1717

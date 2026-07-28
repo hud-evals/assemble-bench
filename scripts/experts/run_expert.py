@@ -77,28 +77,12 @@ with SimulationAppContext(args_cli):
                         help="HUD job name override (useful for calibration sweeps)")
     parser.add_argument("--snap_every", type=int, default=0,
                         help="save env0 front+wrist frames every N steps to /tmp/expert_snaps")
-    parser.add_argument("--debug_env0", action="store_true",
-                        help="per-step env0 servo diagnostics (ori error, joint tracking)")
-    parser.add_argument("--debug_aabb", action="store_true",
-                        help="print env0 nut and fingertip collision AABBs during grasp/microlift")
-    parser.add_argument("--calib_pregrasp", action="store_true",
-                        help="servo uncapped to tool-down above the workspace and print joints")
     parser.add_argument("--sweep_aim", type=str, default=None,
                         help="axis,lo,hi (e.g. x,-0.014,0.007): per-env grasp aim offset sweep")
     parser.add_argument("--sweep_lead", type=str, default=None,
                         help="lo,hi: per-env nut thread lead-phase offset sweep in radians")
     parser.add_argument("--robot_usd", type=str, default=None,
                         help="override the robot USD (A/B-test gripper collision assets)")
-    parser.add_argument("--factory_m16_assets", action="store_true",
-                        help="use NVIDIA's curated Factory M16 nut/bolt USD pair")
-    parser.add_argument("--curated_nut", action="store_true",
-                        help="use curated Factory M16 nut only (A/B which SDF blocks threading)")
-    parser.add_argument("--curated_bolt", action="store_true",
-                        help="use curated Factory M16 bolt only (A/B which SDF blocks threading)")
-    parser.add_argument("--nut_usd", type=str, default=None,
-                        help="override held nut USD path (e.g. factory_nut_M16.usd)")
-    parser.add_argument("--bolt_usd", type=str, default=None,
-                        help="override fixed bolt USD path (e.g. factory_bolt_m16_loose.usd)")
     parser.add_argument("--grip_effort", type=float, default=None,
                         help="cap the finger drive effort (N*m). The USD default 16.5 is the "
                              "source bench's documented pathological config; 1.5 its validated fix")
@@ -106,9 +90,6 @@ with SimulationAppContext(args_cli):
                         help="override arm PD stiffness for contact calibration")
     parser.add_argument("--arm_damping", type=float, default=None,
                         help="override arm PD damping for contact calibration")
-    parser.add_argument("--calib_toollen", type=str, default=None, choices=["open", "closed"],
-                        help="descend the gripper (open|closed) onto the peg; flange z at "
-                             "first contact - peg length = flange->tip length in that state")
     parser.add_argument("--language_instruction", type=str, default=None,
                         help="override the task's own description (Arena builder reads this; "
                              "None falls back to task.get_task_description())")
@@ -129,12 +110,6 @@ with SimulationAppContext(args_cli):
                         help="disable HUD streaming for fast policy-only diagnostics")
     parser.add_argument("--disable_cameras", action="store_true",
                         help="disable cameras for fast policy-only diagnostics (no stream/record)")
-    parser.add_argument("--debug_seat", action="store_true",
-                        help="per-env success sub-metrics (xy/gap/speed vs tolerances) each "
-                             "report tick -- diagnoses seated-looking pegs that miss success")
-    parser.add_argument("--debug_fail", action="store_true",
-                        help="per-env post-mortem at each wave end (phase/failed/yaw/xy/gap) "
-                             "-- diagnoses which stage each failed episode died in")
     parser.add_argument("--reset_warmup_steps", type=int, default=120,
                         help="rendered physics frames after reset; use 4-8 for fast expert iteration")
     parser.add_argument("--reset_rt_subframes", type=int, default=32,
@@ -160,37 +135,6 @@ with SimulationAppContext(args_cli):
         flush=True,
     )
     arena_env = AssemblyBenchEnvironment().get_env(args_cli)
-    # Asset overrides. --factory_m16_assets / --curated_* swap nucleus curated;
-    # --nut_usd / --bolt_usd point at local paths (e.g. converted factory_* stems).
-    def _set_held_usd(path: str):
-        arena_env.task.held.usd_path = path
-        arena_env.scene.assets["held_part"].usd_path = path
-        arena_env.scene.assets["held_part"].object_cfg.spawn.usd_path = path
-
-    def _set_fixed_usd(path: str):
-        arena_env.task.fixed.usd_path = path
-        arena_env.scene.assets["fixed_part"].usd_path = path
-        arena_env.scene.assets["fixed_part"].object_cfg.spawn.usd_path = path
-
-    curate_nut = args_cli.factory_m16_assets or args_cli.curated_nut
-    curate_bolt = args_cli.factory_m16_assets or args_cli.curated_bolt
-    if curate_nut or curate_bolt:
-        if args_cli.task != "nut_M16":
-            raise ValueError("curated M16 overrides require --task nut_M16")
-        from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
-
-        factory_dir = f"{ISAACLAB_NUCLEUS_DIR}/Factory"
-        if curate_nut:
-            _set_held_usd(f"{factory_dir}/factory_nut_m16.usd")
-        if curate_bolt:
-            _set_fixed_usd(f"{factory_dir}/factory_bolt_m16.usd")
-        print(f"[expert] curated M16 overrides: nut={curate_nut} bolt={curate_bolt}", flush=True)
-    if args_cli.nut_usd:
-        _set_held_usd(args_cli.nut_usd)
-        print(f"[expert] nut USD override: {args_cli.nut_usd}", flush=True)
-    if args_cli.bolt_usd:
-        _set_fixed_usd(args_cli.bolt_usd)
-        print(f"[expert] bolt USD override: {args_cli.bolt_usd}", flush=True)
     if args_cli.episode_length_s is not None:
         arena_env.task.episode_length_s = args_cli.episode_length_s
         print(f"[expert] episode timeout: {args_cli.episode_length_s:g}s", flush=True)
@@ -235,60 +179,11 @@ with SimulationAppContext(args_cli):
     # Stream for interactive runs; skip it during bulk --record so a dead
     # telemetry endpoint can't stall generation (retries choke the step loop).
     if not args_cli.no_stream and (args_cli.stream or not args_cli.record):
+        # demo_contract.json = scripted-expert HUD stream (not EnvHub contract.json).
         env = hud.wrap(SuccessInfo(env), job=args_cli.job_name or f"expert-{args_cli.task}",
                        task=variant.instruction,
-                       contract="scripts/experts/contract.json")
+                       contract="scripts/experts/demo_contract.json")
     base = env.unwrapped
-
-    if args_cli.calib_pregrasp:
-        from experts.base import home_quat
-        from isaaclab.utils.math import quat_error_magnitude
-
-        env.reset()
-        servo = Servo(base)
-        down = home_quat(servo)
-        target = torch.tensor([0.40, 0.0, 0.25], device=base.device).expand(base.num_envs, 3)
-        for step in range(220):
-            a = servo.act(target.contiguous(), down, torch.zeros(base.num_envs, device=base.device),
-                          rot_cap=10.0)
-            env.step(a)
-            if step % 40 == 0:
-                e, o = servo.ee()[0], float(quat_error_magnitude(servo.ee_quat()[:1], down[:1])[0])
-                print(f"[calib] s{step} ee=({e[0]:.4f},{e[1]:.4f},{e[2]:.4f}) ori_err={o:.4f}", flush=True)
-        q = wp.to_torch(base.scene["robot"].data.joint_pos)[0, :7]
-        e, o = servo.ee()[0], float(quat_error_magnitude(servo.ee_quat()[:1], down[:1])[0])
-        print(f"[calib] FINAL ee=({e[0]:.4f},{e[1]:.4f},{e[2]:.4f}) ori_err={o:.4f} "
-              f"q={[round(float(x), 4) for x in q]}", flush=True)
-        env.close()
-        raise SystemExit
-
-    if args_cli.calib_toollen:
-        from experts.base import home_quat
-        env.reset()
-        servo = Servo(base)
-        down = home_quat(servo)
-        peg0 = pos_of(base, "held_part").clone()
-        grip = torch.full((base.num_envs,), 1.0 if args_cli.calib_toollen == "closed" else 0.0,
-                          device=base.device)
-        target = peg0.clone()
-        target[:, 2] = 0.30
-        for phase, steps in (("go_above", 200), ("descend", 400)):
-            for step in range(steps):
-                t = target.clone()
-                if phase == "descend":
-                    t[:, 2] = servo.ee()[:, 2] - 0.001   # 1 mm/step straight down
-                env.step(servo.act(t, down, grip))
-                moved = torch.norm(pos_of(base, "held_part") - peg0, dim=-1)
-                if phase == "descend" and float(moved[0]) > 0.0008:
-                    ee_z = float(servo.ee()[0, 2])
-                    print(f"[toollen] {args_cli.calib_toollen} contact at flange z={ee_z:.4f}; "
-                          f"peg top=0.050 -> TOOL_LEN = {ee_z - 0.050:.4f}", flush=True)
-                    break
-            else:
-                continue
-            break
-        env.close()
-        raise SystemExit
 
     recorder = (
         Recorder(
@@ -377,19 +272,6 @@ with SimulationAppContext(args_cli):
                 env._rec.record_indices = [
                     i for i in env._rec.record_indices if not bool(done_now[i])
                 ]
-            if args_cli.debug_env0:
-                from isaaclab.utils.math import quat_apply
-                axis = quat_apply(servo.ee_quat()[:1], torch.tensor(
-                    [[0.0, 0.0, 1.0]], device=base.device))[0]
-                d = base.scene.sensors["ee_frame"].data
-                li = d.target_frame_names.index("tool_leftfinger")
-                ri = d.target_frame_names.index("tool_rightfinger")
-                p = wp.to_torch(d.target_pos_w)[0] - base.scene.env_origins[0]
-                print(f"[dbg] s{step:3d} ph={machine.phases[int(machine.phase[0])].name:9s} "
-                      f"tool_z={axis[2]:.3f} ik_err={servo.dbg_pos_err:.4f} "
-                      f"lim_margin={servo.dbg_lim_margin:.3f} "
-                      f"Lpad=({p[li][0]:.4f},{p[li][1]:.4f},{p[li][2]:.4f}) "
-                      f"Rpad=({p[ri][0]:.4f},{p[ri][1]:.4f},{p[ri][2]:.4f})", flush=True)
             succ_ever |= succ_now
             finished_once |= done_now
             wave_complete = finished_once | machine.failed | machine.finished
@@ -429,65 +311,6 @@ with SimulationAppContext(args_cli):
                         + " ".join(f"{key}={value:.3f}" for key, value in values.items()),
                         flush=True,
                     )
-                phase_name = machine.phases[int(machine.phase[0])].name
-                if args_cli.debug_aabb and phase_name in {"grasp", "microlift"}:
-                    from pxr import Usd, UsdGeom, UsdPhysics
-
-                    bbox = UsdGeom.BBoxCache(Usd.TimeCode.Default(), [UsdGeom.Tokens.default_])
-                    stage = base.scene.stage
-                    nut_prim = stage.GetPrimAtPath("/World/envs/env_0/held_part")
-                    nut_range = bbox.ComputeWorldBound(nut_prim).ComputeAlignedRange()
-                    nut_min, nut_max = nut_range.GetMin(), nut_range.GetMax()
-                    print(
-                        f"[aabb] nut x[{nut_min[0]:.4f},{nut_max[0]:.4f}] "
-                        f"y[{nut_min[1]:.4f},{nut_max[1]:.4f}] "
-                        f"z[{nut_min[2]:.4f},{nut_max[2]:.4f}]",
-                        flush=True,
-                    )
-                    for prim in stage.Traverse():
-                        path = str(prim.GetPath())
-                        if (
-                            "env_0/Robot" in path
-                            and "fingertips" in path
-                            and prim.HasAPI(UsdPhysics.CollisionAPI)
-                        ):
-                            pad_range = bbox.ComputeWorldBound(prim).ComputeAlignedRange()
-                            pad_min, pad_max = pad_range.GetMin(), pad_range.GetMax()
-                            side = "L" if "left" in path else "R"
-                            print(
-                                f"[aabb] pad_{side} x[{pad_min[0]:.4f},{pad_max[0]:.4f}] "
-                                f"y[{pad_min[1]:.4f},{pad_max[1]:.4f}] "
-                                f"z[{pad_min[2]:.4f},{pad_max[2]:.4f}]",
-                                flush=True,
-                            )
-            if args_cli.debug_seat and (step % 25 == 0 or bool(wave_complete.all())):
-                from isaaclab.utils.math import quat_apply
-                held = base.scene["held_part"]
-                fixed = base.scene["fixed_part"]
-                hp = wp.to_torch(held.data.root_pos_w) - base.scene.env_origins
-                fp = wp.to_torch(fixed.data.root_pos_w) - base.scene.env_origins
-                fq = wp.to_torch(fixed.data.root_quat_w)
-                off = torch.tensor(variant.seat_off, device=base.device).expand(base.num_envs, 3)
-                tgt = fp + quat_apply(fq, off)
-                xy = torch.norm(hp[:, :2] - tgt[:, :2], dim=-1)
-                gap = (hp[:, 2] + variant.held_base_z_off) - tgt[:, 2]
-                spd = torch.norm(wp.to_torch(held.data.root_lin_vel_w), dim=-1)
-                def _yaw(name):
-                    x = quat_apply(quat_of(base, name),
-                                   torch.tensor([1.0, 0.0, 0.0], device=base.device).expand(base.num_envs, 3))
-                    return torch.atan2(x[:, 1], x[:, 0])
-                yerr = _yaw("fixed_part") - _yaw("held_part")
-                yerr = yerr - torch.pi * torch.round(yerr / torch.pi)   # 2-fold (rect)
-                for i in range(base.num_envs):
-                    a = xy[i] < variant.align_tol
-                    s = gap[i] < variant.seat_tol
-                    v = spd[i] < 0.05
-                    ph = machine.phases[int(machine.phase[i])].name
-                    print(f"[seat] w{wave} s{step:3d} env{i} {ph:9s} xy={xy[i]*1e3:5.1f}mm "
-                          f"gap={gap[i]*1e3:6.1f}mm yaw={float(yerr[i])*57.3:5.1f}deg spd={spd[i]:.3f} | "
-                          f"align{'Y' if a else 'n'} seat{'Y' if s else 'n'} "
-                          f"stbl{'Y' if v else 'n'} => {'SEATED' if (a and s and v) else '-'}",
-                          flush=True)
             if bool(wave_complete.all()):
                 break
         if recorder is not None:
@@ -501,24 +324,6 @@ with SimulationAppContext(args_cli):
                    f" = {recorder.n_success}ok/{recorder.n_fail}fail)")
         print(f"[expert] wave {wave}: seated {int(succ_ever.sum())}/{base.num_envs}{mix}",
               flush=True)
-        if args_cli.debug_fail:
-            # Per-env post-mortem: final phase, failed flag, and the seat/yaw
-            # residuals -- shows WHY each env failed (bad clock vs bad seat).
-            from isaaclab.utils.math import quat_apply
-            def _yaw(name):
-                x = quat_apply(quat_of(base, name),
-                               torch.tensor([1.0, 0.0, 0.0], device=base.device).expand(base.num_envs, 3))
-                return torch.atan2(x[:, 1], x[:, 0])
-            ye = _yaw("fixed_part") - _yaw("held_part")
-            ye = ye - torch.pi * torch.round(ye / torch.pi)   # 2-fold (rect)
-            hp = pos_of(base, "held_part"); fp = pos_of(base, "fixed_part")
-            xy = torch.norm(hp[:, :2] - fp[:, :2], dim=-1)
-            gap = hp[:, 2] - fp[:, 2]
-            for i in range(base.num_envs):
-                print(f"[fail] w{wave} env{i} phase={machine.phases[int(machine.phase[i])].name:9s} "
-                      f"failed={bool(machine.failed[i])} succ={bool(succ_ever[i])} "
-                      f"yaw_err={float(ye[i])*57.3:5.1f}deg xy={float(xy[i])*1e3:5.1f}mm "
-                      f"gap={float(gap[i])*1e3:6.1f}mm", flush=True)
         if machine.failure_report():
             print(f"[expert] timeout failure phases: {machine.failure_report()}", flush=True)
         # Stop early once enough demos are banked (bulk data-gen target).

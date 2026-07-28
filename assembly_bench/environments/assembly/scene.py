@@ -130,14 +130,13 @@ for _s in (8, 12, 16, 20):
 _register("asm_nist_board", str(PARTS_DIR / "nist_gmc_base.usd"),
           mass=1.0, impulse_cap=GEAR_NUT_IMPULSE_CAP, kinematic=True)
 
-# DEBUG ONLY — RoboLab apple/bowl for a policy sanity-check pick-and-place.
-# Not part of the NIST assembly matrix. Apple is Objaverse (~100x oversized).
+# Smoke pick-place only (not NIST): apple → bowl. See assets/parts/debug/.
 DEBUG_DIR = ASSETS_DIR / "parts" / "debug"
 
 
 @register_asset
 class AsmDebugApple(LibraryObject):
-    """DEBUG: RoboLab ``apple_01`` (~7 cm). Pick-place contact skin, not peg."""
+    """Smoke: RoboLab ``apple_01`` (~7 cm). Pick-place contact skin, not peg."""
 
     name = "asm_debug_apple"
     tags = ["object", "debug"]
@@ -163,7 +162,7 @@ class AsmDebugApple(LibraryObject):
 
 @register_asset
 class AsmDebugBowl(LibraryObject):
-    """DEBUG: RoboLab YCB bowl (kinematic receptacle)."""
+    """Smoke: RoboLab YCB bowl (kinematic receptacle)."""
 
     name = "asm_debug_bowl"
     tags = ["object", "debug"]

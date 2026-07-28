@@ -24,5 +24,8 @@ assembly_bench = "."
 [tool.setuptools.package-data]
 assembly_bench = [
     "assets/parts/used/**/*.usd",
+    "assets/parts/debug/**/*.usd",
+    "assets/parts/debug/**/*.jpg",
+    "assets/parts/debug/**/*.png",
     "assets/backgrounds/indoors/*.hdr",
 ]

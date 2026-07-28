@@ -15,8 +15,8 @@ stand holding the free part, and the fixture it must be assembled into.
 
 ## Task space
 
-15 loose-clearance variants across 3 families, plus a DEBUG apple→bowl check
-(`debug`). Peg sizes are stem diameters in mm (`4/8/12/16`):
+15 loose-clearance variants across 3 families, plus a smoke apple→bowl check
+(`debug`, not NIST). Peg sizes are stem diameters in mm (`4/8/12/16`):
 
 | family | variants | goal |
 |---|---|---|
@@ -45,17 +45,19 @@ assembly_bench/
 │   ├── pyproject.toml
 │   ├── environments/assembly/
 │   │   ├── assembly.py                 AssemblyBenchEnvironment
-│   │   ├── variants.py                 15+debug variants as pure data
+│   │   ├── variants.py                 15 NIST + smoke debug as pure data
 │   │   ├── scene.py                    @register_asset parts (asm_* prefix)
 │   │   ├── tasks.py                    seat-geometry success + reset jitter
 │   │   ├── embodiments.py              softmimic DROID register
 │   │   ├── cameras.py                  front + wrist framing
 │   │   ├── observations.py             privileged part poses / arm vel
 │   │   └── rewards.py                  dense RL (--reward staged|potential)
-│   └── assets/parts/used/              pegs, gears, nuts, NIST board
+│   └── assets/parts/
+│       ├── used/                       pegs, gears, nuts, NIST board
+│       └── debug/                      apple/bowl smoke pick-place
 ├── tasks/                              HUD run suites (not scene defs)
 │   ├── vla/                            template "assembly" (openpi)
-│   │   ├── all.json / smoke.json
+│   │   ├── all.json / smoke.json / debug.json
 │   └── agent/                          template "assembly_agent" (MCP)
 │       └── pegs.json
 ├── scripts/
@@ -64,9 +66,11 @@ assembly_bench/
 │   └── experts/                        scripted demos + optional CG-DAgger
 │       ├── peg.py / gear.py / nut.py
 │       ├── run_expert.py / record.py
+│       ├── demo_contract.json          HUD-wrap schema for expert streams
 │       ├── rl/                         online fail→expert takeover
 │       └── util/                       LeRobot HDF5 convert / push
-└── env.py                              HUD EnvHub entry (optional)
+├── contract.json                       EnvHub / policy wire (env.py)
+└── env.py                              HUD EnvHub entry
 ```
 
 ## Install
@@ -83,10 +87,6 @@ done
 pip install -e submodules/IsaacLab-Arena
 pip install -e assembly_bench                  # this package
 ```
-
-> In this workspace, `submodules/IsaacLab-Arena` is a symlink to
-> `../bench/submodules/IsaacLab-Arena` for development convenience; replace it
-> with a real git submodule when the repo is initialized.
 
 ## Run
 
@@ -119,9 +119,13 @@ Scene variants are defined in `variants.py`. Run lists for `hud eval` live under
 tools. Regenerate after editing variants: `python scripts/taskset.py`.
 
 ```bash
+hud eval tasks/vla/debug.json <agent> --runtime tcp://127.0.0.1:8765
 hud eval tasks/vla/smoke.json <agent> --runtime tcp://127.0.0.1:8765
 hud eval tasks/vla/all.json <agent> --full --runtime tcp://127.0.0.1:8765
 ```
+
+`debug` is apple→bowl smoke pick-place (not NIST). NIST families are peg /
+gear / nut.
 
 ### Dense rewards (custom RL loops)
 

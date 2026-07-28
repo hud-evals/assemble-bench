@@ -122,5 +122,5 @@
       "comment": "Dims 0-6: absolute joint targets (rad, REAL). Dim 7: gripper (NORM01; >0.5 closes)."
     }
   },
-  "comment": "assembly_bench DROID (droid_abs_joint_pos): Franka Panda 7-DoF + Robotiq 2F-85. Wire keys match Arena obs groups. One action feature per the v0 contract: 7 absolute joint targets + binary gripper. Omits policy/actions and policy/robot_joint_pos (redundant with action echo / full articulation)."
+  "comment": "EnvHub / policy wire for env.py (canonical). Distinct from scripts/experts/demo_contract.json (scripted-expert HUD streams). DROID abs joint-pos: 7 Franka targets + binary gripper; privileged poses for PA-RL; expert_active/executed_action when CG-DAgger is on."
 }

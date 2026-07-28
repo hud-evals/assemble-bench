@@ -1,4 +1,5 @@
 {
+  "comment": "HUD-wrap schema for scripted expert demos (run_expert.py). Distinct from root contract.json (EnvHub policy wire).",
   "control_rate": 15,
   "features": {
     "camera_obs/wrist_camera_rgb": {

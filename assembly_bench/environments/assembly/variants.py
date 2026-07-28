@@ -168,8 +168,8 @@ for _size in (8, 12, 16, 20):
     VARIANTS[f"nut_M{_size}"] = _nut(_size)
 
 # ---------------------------------------------------------------------------
-# DEBUG ONLY — RoboLab apple→bowl. Not part of the NIST assembly matrix.
-# Prompt matches RoboLab's "Put the X in the Y" convention.
+# Smoke pick-place (not NIST) — apple → bowl for a hello-world policy check.
+# Assets: assets/parts/debug/. Suite: tasks/vla/debug.json.
 # ---------------------------------------------------------------------------
 _APPLE_ORIGIN_ABOVE_BOTTOM = 0.0188   # scaled apple_01 AABB
 _BOWL_ORIGIN_ABOVE_BOTTOM = 0.0275    # YCB bowl AABB

@@ -2,19 +2,21 @@
 
 ```
 parts/
-├── used/                 ← wired by environments/assembly/scene.py
+├── used/                 ← NIST assembly (wired by scene.py)
 │   ├── pegs/             loose pegs + matching holes (also used as stands)
 │   ├── gears/            re-centered gear meshes
-│   ├── nuts/             factory_*_loose nut/bolt pairs (see below)
+│   ├── nuts/             factory_*_loose nut/bolt pairs
 │   └── nist_gmc_base.usd NIST board
-└── debug/                apple/bowl sanity-check (gitignored; local only)
+└── debug/                smoke pick-place only (apple → bowl; not NIST)
+    ├── apple_01.usd
+    └── bowl.usd
 ```
 
-**`factory_*` naming.** Those USDs are converted from NVIDIA’s
-[Isaac Gym Envs Factory](https://github.com/NVIDIA-Omniverse/IsaacGymEnvs)
-`assets/factory` nut/bolt OBJs (same family as Isaac Lab’s Factory / FORGE
-assembly tasks). The stem keeps provenance (`factory_nut_m16_loose.usd`); the
-Arena registry name is still `asm_nut_m16_loose`. Pegs/gears use `gen_*` because
-they were authored procedurally in this repo, not converted from Factory meshes.
+**`factory_*` naming.** Nut/bolt USDs are converted from NVIDIA’s Isaac Gym
+Envs Factory meshes. Pegs/gears use `gen_*` (authored in this repo). Arena
+registry names are still `asm_*`.
+
+**`debug/`.** Hello-world variant `--task debug` / `tasks/vla/debug.json` —
+sanity-check pick-and-place, not part of the NIST matrix.
 
 Register new parts in `scene.py`, then reference them from `variants.py`.

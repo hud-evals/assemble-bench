@@ -11,8 +11,9 @@ Suites only list variant names — they do not define new scenes.
 ```
 tasks/
 ├── vla/                 # template id "assembly" (joint-position / openpi)
-│   ├── all.json         # every variant
-│   └── smoke.json       # one peg + gear + nut
+│   ├── all.json         # every variant (NIST + debug)
+│   ├── smoke.json       # one peg + gear + nut
+│   └── debug.json       # apple → bowl hello-world (not NIST)
 └── agent/               # template id "assembly_agent" (MCP EE tools)
     └── pegs.json        # peg smokes × guided / vision
 ```
@@ -29,11 +30,14 @@ python scripts/taskset.py
 ## Examples
 
 ```bash
-# Full VLA suite against a serving env.py
-hud eval tasks/vla/all.json <agent> --full --runtime tcp://127.0.0.1:8765
+# Hello-world pick-place (not NIST)
+hud eval tasks/vla/debug.json <agent> --runtime tcp://127.0.0.1:8765
 
-# Quick smoke (3 variants)
+# Quick NIST smoke (3 variants)
 hud eval tasks/vla/smoke.json <agent> --runtime tcp://127.0.0.1:8765
+
+# Full VLA suite
+hud eval tasks/vla/all.json <agent> --full --runtime tcp://127.0.0.1:8765
 
 # LLM tool path
 hud eval tasks/agent/pegs.json <agent> --runtime tcp://127.0.0.1:8765
