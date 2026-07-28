@@ -36,7 +36,7 @@ Boot takes minutes; watch `docker logs -f assembly-env` for `HUD_SERVE_PORT=8765
 Attach to the running container (`docker port assembly-env 8765` gives the host port):
 
 ```bash
-hud eval assembly_bench/tasks.json inventory/agents/pi05_droid.py \
+hud eval assembly_bench/tasks/vla/all.json inventory/agents/pi05_droid.py \
     --full --runtime tcp://127.0.0.1:<host-port> --num-envs 4
 ```
 

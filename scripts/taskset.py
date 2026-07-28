@@ -1,15 +1,14 @@
-"""Export the full assembly benchmark taskset to ``tasks.json``.
+"""Regenerate HUD run suites under ``tasks/`` from ``variants.py``.
 
-One row per variant, generated from the pure-data manifest so the JSON can
-never drift from ``variants.py``. Regenerate::
+Source of truth for *what exists* is ``environments/assembly/variants.py``.
+These JSON files are only *which rows to run* for ``hud eval``.
 
-    python taskset.py
+    python scripts/taskset.py
 
-The JSON is import-free, so ``hud eval`` can load it from any conda env while
-the sim serves from ``isaac6`` (``--full`` runs all 16 variants)::
+Then::
 
-    hud eval assembly_bench/tasks.json inventory/agents/pi05_droid.py \\
-        --full --runtime tcp://127.0.0.1:8765
+    hud eval tasks/vla/all.json <agent> --full --runtime tcp://127.0.0.1:8765
+    hud eval tasks/vla/smoke.json <agent> --runtime tcp://127.0.0.1:8765
 """
 
 from __future__ import annotations
@@ -19,20 +18,66 @@ from pathlib import Path
 
 from assembly_bench.environments.assembly.variants import VARIANTS
 
+ROOT = Path(__file__).resolve().parents[1]
 ENV = "assembly-bench"
-TEMPLATE = "assembly"
-OUTPUT = Path(__file__).resolve().parents[1] / "tasks.json"
+
+# Small first-run subset: one variant per family.
+SMOKE = ("peg_round_8mm", "gear_medium", "nut_M16")
 
 
-def export(path: Path = OUTPUT, seed: int = 0) -> Path:
-    rows = [
-        {"env": ENV, "id": TEMPLATE, "slug": name, "args": {"task": name, "seed": seed}}
-        for name in sorted(VARIANTS)
-    ]
+def _write(path: Path, rows: list[dict]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(rows, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {len(rows)} tasks -> {path}")
     return path
 
 
+def export_vla(*, seed: int = 0) -> None:
+    """VLA template ``assembly`` — joint-position openpi wire."""
+    all_rows = [
+        {
+            "env": ENV,
+            "id": "assembly",
+            "slug": name,
+            "args": {"task": name, "seed": seed},
+        }
+        for name in sorted(VARIANTS)
+    ]
+    _write(ROOT / "tasks" / "vla" / "all.json", all_rows)
+
+    smoke_rows = [
+        {
+            "env": ENV,
+            "id": "assembly",
+            "slug": name,
+            "args": {"task": name, "seed": seed},
+        }
+        for name in SMOKE
+        if name in VARIANTS
+    ]
+    _write(ROOT / "tasks" / "vla" / "smoke.json", smoke_rows)
+
+
+def export_agent(*, seed: int = 0) -> None:
+    """MCP template ``assembly_agent`` — EE tools; guided vs vision-only."""
+    # Peg smokes with both prompt modes (see env.py assembly_agent).
+    pegs = ("peg_round_8mm", "peg_round_4mm")
+    rows = []
+    for task in pegs:
+        if task not in VARIANTS:
+            continue
+        for guided, tag in ((True, "guided"), (False, "vision")):
+            rows.append(
+                {
+                    "env": ENV,
+                    "id": "assembly_agent",
+                    "slug": f"{task}_{tag}",
+                    "args": {"task": task, "seed": seed, "guided": guided},
+                }
+            )
+    _write(ROOT / "tasks" / "agent" / "pegs.json", rows)
+
+
 if __name__ == "__main__":
-    export()
+    export_vla()
+    export_agent()

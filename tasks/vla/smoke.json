@@ -5,9 +5,7 @@
     "slug": "peg_round_8mm",
     "args": {
       "task": "peg_round_8mm",
-      "seed": 0,
-      "reward": "staged",
-      "num_envs": 8
+      "seed": 0
     }
   },
   {
@@ -16,9 +14,7 @@
     "slug": "gear_medium",
     "args": {
       "task": "gear_medium",
-      "seed": 0,
-      "reward": "staged",
-      "num_envs": 8
+      "seed": 0
     }
   },
   {
@@ -27,9 +23,7 @@
     "slug": "nut_M16",
     "args": {
       "task": "nut_M16",
-      "seed": 0,
-      "reward": "staged",
-      "num_envs": 8
+      "seed": 0
     }
   }
 ]

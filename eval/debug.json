@@ -1,8 +1,0 @@
-[
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "debug",
-    "args": {"task": "debug", "seed": 0}
-  }
-]

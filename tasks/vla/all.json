@@ -2,90 +2,9 @@
   {
     "env": "assembly-bench",
     "id": "assembly",
-    "slug": "peg_round_4mm",
+    "slug": "debug",
     "args": {
-      "task": "peg_round_4mm",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "peg_round_8mm",
-    "args": {
-      "task": "peg_round_8mm",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "peg_round_12mm",
-    "args": {
-      "task": "peg_round_12mm",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "peg_round_16mm",
-    "args": {
-      "task": "peg_round_16mm",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "peg_square_4mm",
-    "args": {
-      "task": "peg_square_4mm",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "peg_square_8mm",
-    "args": {
-      "task": "peg_square_8mm",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "peg_square_12mm",
-    "args": {
-      "task": "peg_square_12mm",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "peg_square_16mm",
-    "args": {
-      "task": "peg_square_16mm",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "gear_small",
-    "args": {
-      "task": "gear_small",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
-    "slug": "gear_medium",
-    "args": {
-      "task": "gear_medium",
+      "task": "debug",
       "seed": 0
     }
   },
@@ -101,9 +20,18 @@
   {
     "env": "assembly-bench",
     "id": "assembly",
-    "slug": "nut_M8",
+    "slug": "gear_medium",
     "args": {
-      "task": "nut_M8",
+      "task": "gear_medium",
+      "seed": 0
+    }
+  },
+  {
+    "env": "assembly-bench",
+    "id": "assembly",
+    "slug": "gear_small",
+    "args": {
+      "task": "gear_small",
       "seed": 0
     }
   },
@@ -137,9 +65,81 @@
   {
     "env": "assembly-bench",
     "id": "assembly",
-    "slug": "debug",
+    "slug": "nut_M8",
     "args": {
-      "task": "debug",
+      "task": "nut_M8",
+      "seed": 0
+    }
+  },
+  {
+    "env": "assembly-bench",
+    "id": "assembly",
+    "slug": "peg_round_12mm",
+    "args": {
+      "task": "peg_round_12mm",
+      "seed": 0
+    }
+  },
+  {
+    "env": "assembly-bench",
+    "id": "assembly",
+    "slug": "peg_round_16mm",
+    "args": {
+      "task": "peg_round_16mm",
+      "seed": 0
+    }
+  },
+  {
+    "env": "assembly-bench",
+    "id": "assembly",
+    "slug": "peg_round_4mm",
+    "args": {
+      "task": "peg_round_4mm",
+      "seed": 0
+    }
+  },
+  {
+    "env": "assembly-bench",
+    "id": "assembly",
+    "slug": "peg_round_8mm",
+    "args": {
+      "task": "peg_round_8mm",
+      "seed": 0
+    }
+  },
+  {
+    "env": "assembly-bench",
+    "id": "assembly",
+    "slug": "peg_square_12mm",
+    "args": {
+      "task": "peg_square_12mm",
+      "seed": 0
+    }
+  },
+  {
+    "env": "assembly-bench",
+    "id": "assembly",
+    "slug": "peg_square_16mm",
+    "args": {
+      "task": "peg_square_16mm",
+      "seed": 0
+    }
+  },
+  {
+    "env": "assembly-bench",
+    "id": "assembly",
+    "slug": "peg_square_4mm",
+    "args": {
+      "task": "peg_square_4mm",
+      "seed": 0
+    }
+  },
+  {
+    "env": "assembly-bench",
+    "id": "assembly",
+    "slug": "peg_square_8mm",
+    "args": {
+      "task": "peg_square_8mm",
       "seed": 0
     }
   }
