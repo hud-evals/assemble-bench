@@ -7,20 +7,15 @@ the robot WebSocket rides the control channel's capability tunnel.
 
 ## Build
 
-Build from the **assembly_bench repo root** (no sibling repos needed). Initialize
-Arena + its nested IsaacLab first so the `COPY` paths exist:
+Build from the **assembly_bench repo root** (no sibling repos needed):
 
 ```bash
-# once, from the repo root:
-git submodule update --init submodules/IsaacLab-Arena
-git -C submodules/IsaacLab-Arena config url."https://github.com/".insteadOf "git@github.com:"
-git -C submodules/IsaacLab-Arena submodule update --init submodules/IsaacLab
-
+./scripts/setup_sim.sh --submodules-only   # Arena + IsaacLab over HTTPS (no SSH keys)
 docker build -f docker/Dockerfile -t hud-assembly-env .
 ```
 
-Or just run `./scripts/setup_sim.sh` on a host with Isaac (it fetches the same
-submodules), then build.
+Needs an NVIDIA NGC login to pull the Isaac Sim base image
+(`docker login nvcr.io`).
 
 The image installs `hud-python` from PyPI into kit's Python (constraint-frozen so
 kit-owned packages are never upgraded).

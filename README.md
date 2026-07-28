@@ -53,13 +53,14 @@ cd assembly_bench
 
 # Inside your Isaac Sim environment (conda env, NGC container, or /isaac-sim/python.sh):
 export OMNI_KIT_ACCEPT_EULA=YES
-./scripts/setup_sim.sh              # Arena submodule + Isaac Lab + this package
+./scripts/setup_sim.sh              # fetch Arena/IsaacLab + pip-install into Isaac Python
 ./scripts/setup_sim.sh --with-hud   # same, plus hud-python for Path B
 ```
 
 `setup_sim.sh` fetches the [Isaac Lab Arena](https://github.com/isaac-sim/IsaacLab-Arena)
-submodule (and its pinned IsaacLab), installs both editable, then installs
-`assembly_bench`. Arena stays unmodified; this repo plugs in through its registration API.
+submodule and its pinned IsaacLab over **HTTPS** (no GitHub SSH keys needed), installs
+both editable, then installs `assembly_bench`. Arena stays unmodified; this repo plugs in
+through its registration API.
 
 For Path B's VLA agent, in a **separate** Python 3.10+ environment:
 
@@ -68,8 +69,12 @@ For Path B's VLA agent, in a **separate** Python 3.10+ environment:
 hf auth login                       # after accepting the PaliGemma gate above
 ```
 
-No Isaac Sim on the host? Skip `setup_sim.sh` and serve via Docker instead – see Path B
-and [`docker/docker.md`](docker/docker.md).
+No Isaac Sim on the host? Fetch the submodules, then serve via Docker:
+
+```bash
+./scripts/setup_sim.sh --submodules-only
+# then follow docker/docker.md
+```
 
 ## Running the benchmark
 
