@@ -58,11 +58,32 @@ Arena stays an unmodified submodule; this repo plugs into it through its registr
 
 ## Running the benchmark
 
-Two paths. **Path A (HUD)** is the usual one for evaluating VLAs, parallel envs, and
-optional per-episode traces. **Path B** drives Isaac Sim directly if you just want the
-sim.
+Two paths. **Path A** drives Isaac Sim directly – the usual route if you already have
+Isaac Sim on the machine. **Path B (HUD)** serves the sim over the network for evaluating
+VLAs, parallel envs, and optional per-episode traces.
 
-### Path A – HUD
+### Path A – Isaac Sim directly
+
+Nothing to install beyond the Install section. From `submodules/IsaacLab-Arena`, using
+Arena's external-environment CLI:
+
+```bash
+python isaaclab_arena/evaluation/policy_runner.py \
+    --policy_type zero_action --num_episodes 1 \
+    --external_environment_class_path \
+    assembly_bench.environments.assembly.assembly:AssemblyBenchEnvironment \
+    assembly_bench --task peg_round_8mm --headless
+```
+
+| Flag | Default | Notes |
+|---|---|---|
+| `--task` | `peg_round_8mm` | any task id from the table above, or `debug` |
+| `--embodiment` | `droid_abs_joint_pos_softmimic` | DROID with this benchmark's contact tuning; `droid_abs_joint_pos` is stock, any `franka_*` also works |
+| `--reward` | `none` | `staged` / `potential` add dense reward for RL |
+| `--hdr` | `asm_machine_shop` | any Arena HDR registry name, or `none` |
+| `--num_envs` | `1` | parallel envs on one GPU |
+
+### Path B – HUD
 
 Serve the environment once, then attach a policy over TCP. The simulator and the policy
 can live in different environments (or on different machines).
@@ -110,27 +131,6 @@ Without the key, nothing is sent anywhere.
 
 > An LLM tool-use path (`agents/`, `tasks/agent/`) is **in development** and not ready
 > for use yet.
-
-### Path B – Isaac Sim directly
-
-Nothing to install beyond the Install section. From `submodules/IsaacLab-Arena`, using
-Arena's external-environment CLI:
-
-```bash
-python isaaclab_arena/evaluation/policy_runner.py \
-    --policy_type zero_action --num_episodes 1 \
-    --external_environment_class_path \
-    assembly_bench.environments.assembly.assembly:AssemblyBenchEnvironment \
-    assembly_bench --task peg_round_8mm --headless
-```
-
-| Flag | Default | Notes |
-|---|---|---|
-| `--task` | `peg_round_8mm` | any task id from the table above, or `debug` |
-| `--embodiment` | `droid_abs_joint_pos_softmimic` | DROID with this benchmark's contact tuning; `droid_abs_joint_pos` is stock, any `franka_*` also works |
-| `--reward` | `none` | `staged` / `potential` add dense reward for RL |
-| `--hdr` | `asm_machine_shop` | any Arena HDR registry name, or `none` |
-| `--num_envs` | `1` | parallel envs on one GPU |
 
 ## Test your install
 
