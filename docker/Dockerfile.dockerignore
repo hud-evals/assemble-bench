@@ -6,7 +6,6 @@
 !hud-python
 !assembly_bench/submodules/IsaacLab-Arena
 assembly_bench/eval
-assembly_bench/notes
 assembly_bench/submodules/IsaacLab-Arena/submodules/Isaac-GR00T
 assembly_bench/submodules/IsaacLab-Arena/docs
 **/__pycache__
