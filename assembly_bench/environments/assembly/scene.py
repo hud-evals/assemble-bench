@@ -1,10 +1,9 @@
 """Arena-registered assets for the NIST assembly benchmark.
 
 Registers every part the variants reference, under an ``asm_`` prefix so the
-names never collide with Arena's own library. Local USDs ship in
-``assembly_bench/assets/parts`` (generated, physics-validated: watertight SDF
-bores, calibrated frames); the M16 nut/bolt and the gear base come from the
-Isaac Lab Factory asset dir, exactly as in the source benchmark.
+names never collide with Arena's own library. Benchmark USDs live in
+``assets/parts/used/`` (see that folder's README). Gear base comes from
+Isaac Lab Factory ``ASSET_DIR``.
 
 Asset roles mirror the source env:
   held  -- free dynamic part (gravity on), grasped and assembled.
@@ -28,7 +27,7 @@ from isaaclab_arena.assets.register import register_asset, register_hdr
 # absolute() (not resolve): HF Hub snapshots symlink into blobs/, and resolve()
 # would land ASSETS_DIR on ~/.cache/huggingface/hub/assets.
 ASSETS_DIR = Path(__file__).absolute().parents[2] / "assets"
-PARTS_DIR = ASSETS_DIR / "parts"
+PARTS_DIR = ASSETS_DIR / "parts" / "used"
 
 
 @register_hdr
@@ -106,34 +105,34 @@ def _register(name: str, usd: str, *, mass: float | None = None, impulse_cap: fl
 for _size in (4, 8, 12, 16):
     for _stem in ("round", "rect"):
         _register(f"asm_peg_{_stem}_{_size}mm_loose",
-                  str(PARTS_DIR / f"gen_{_stem}_peg_{_size}mm_loose.usd"), mass=0.019)
+                  str(PARTS_DIR / "pegs" / f"gen_{_stem}_peg_{_size}mm_loose.usd"), mass=0.019)
         _register(f"asm_hole_{_stem}_{_size}mm",
-                  str(PARTS_DIR / f"gen_{_stem}_hole_{_size}mm.usd"), mass=0.05)
+                  str(PARTS_DIR / "pegs" / f"gen_{_stem}_hole_{_size}mm.usd"), mass=0.05)
 
 # Gear family: re-centered gears (frame on the shaft axis) as both the free
 # held part and the kinematic flanking mesh partners; base from Factory.
 for _k, _m in GEAR_MASS.items():
-    _register(f"asm_gear_{_k}", str(PARTS_DIR / f"gen_gear_{_k}.usd"),
+    _register(f"asm_gear_{_k}", str(PARTS_DIR / "gears" / f"gen_gear_{_k}.usd"),
               mass=_m, impulse_cap=GEAR_NUT_IMPULSE_CAP)
-    _register(f"asm_gear_{_k}_fixed", str(PARTS_DIR / f"gen_gear_{_k}.usd"),
+    _register(f"asm_gear_{_k}_fixed", str(PARTS_DIR / "gears" / f"gen_gear_{_k}.usd"),
               mass=_m, impulse_cap=GEAR_NUT_IMPULSE_CAP, kinematic=True)
 _register("asm_gear_base", f"{ASSET_DIR}/factory_gear_base.usd",
           mass=0.05, impulse_cap=GEAR_NUT_IMPULSE_CAP)
 
-# Nut family on the NIST GMC board: IsaacGymEnvs factory OBJs converted to USD
-# (SDF + brass/steel MDL). Loose clearance only. Procedural gen_* pairs do not
-# SDF-mate for descent. M4 omitted — pad geometry cannot grasp the 3.2 mm hex.
+# Nut family on the NIST GMC board: IsaacGymEnvs Factory OBJs → USD
+# (SDF + brass/steel MDL). Loose clearance only. M4 omitted — pad cannot grasp
+# the 3.2 mm hex.
 for _s in (8, 12, 16, 20):
-    _register(f"asm_nut_m{_s}_loose", str(PARTS_DIR / f"factory_nut_m{_s}_loose.usd"),
+    _register(f"asm_nut_m{_s}_loose", str(PARTS_DIR / "nuts" / f"factory_nut_m{_s}_loose.usd"),
               impulse_cap=GEAR_NUT_IMPULSE_CAP)
-    _register(f"asm_bolt_m{_s}_loose", str(PARTS_DIR / f"factory_bolt_m{_s}_loose.usd"),
+    _register(f"asm_bolt_m{_s}_loose", str(PARTS_DIR / "nuts" / f"factory_bolt_m{_s}_loose.usd"),
               impulse_cap=GEAR_NUT_IMPULSE_CAP)
 _register("asm_nist_board", str(PARTS_DIR / "nist_gmc_base.usd"),
           mass=1.0, impulse_cap=GEAR_NUT_IMPULSE_CAP, kinematic=True)
 
 # DEBUG ONLY — RoboLab apple/bowl for a policy sanity-check pick-and-place.
 # Not part of the NIST assembly matrix. Apple is Objaverse (~100x oversized).
-DEBUG_DIR = PARTS_DIR / "debug"
+DEBUG_DIR = ASSETS_DIR / "parts" / "debug"
 
 
 @register_asset

@@ -22,4 +22,7 @@ packages = [
 assembly_bench = "."
 
 [tool.setuptools.package-data]
-assembly_bench = ["assets/parts/*.usd", "assets/backgrounds/indoors/*.hdr"]
+assembly_bench = [
+    "assets/parts/used/**/*.usd",
+    "assets/backgrounds/indoors/*.hdr",
+]
