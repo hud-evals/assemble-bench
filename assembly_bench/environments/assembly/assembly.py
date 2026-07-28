@@ -1,8 +1,8 @@
 """NIST assembly benchmark environment for Isaac Lab Arena (externally defined).
 
 A Franka faces the NIST-taskboard workspace on the ``table`` background, with
-one of 27 task variants (peg insert / gear mesh / nut thread)
-selected via ``--task``. Run with, e.g.::
+one of 14 benchmark variants (peg insert / gear mesh / nut thread), plus a
+``debug`` pick-place smoke, selected via ``--task``. Run with, e.g.::
 
     python isaaclab_arena/evaluation/policy_runner.py \\
         --policy_type zero_action --num_episodes 1 \\

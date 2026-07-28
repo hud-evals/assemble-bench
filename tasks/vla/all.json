@@ -56,15 +56,6 @@
   {
     "env": "assembly-bench",
     "id": "assembly",
-    "slug": "nut_M20",
-    "args": {
-      "task": "nut_M20",
-      "seed": 0
-    }
-  },
-  {
-    "env": "assembly-bench",
-    "id": "assembly",
     "slug": "nut_M8",
     "args": {
       "task": "nut_M8",

@@ -1,8 +1,8 @@
 """The benchmark manifest: NIST-taskboard assembly variants as pure data.
 
-15 assembly variants (loose-clearance only) plus one DEBUG apple→bowl sanity
+14 benchmark variants (loose-clearance only) plus one DEBUG apple→bowl sanity
 check: peg-insert (round/square × 4/8/12/16 mm), gear-mesh (small/medium/large),
-and nut-thread (M8/M12/M16/M20). Each variant fully specifies the scene content
+and nut-thread (M8/M12/M16). Each variant fully specifies the scene content
 (held / fixed / stand / extra assets and their poses) and the seat geometry that
 defines success. Kept free of Isaac imports so the CLI can list ``--task``
 choices before the simulator app launches.
@@ -125,7 +125,6 @@ NUTBOLT = {
     8: dict(head_h=0.008, shank=0.018, pitch=0.00125),
     12: dict(head_h=0.012, shank=0.02, pitch=0.00175),
     16: dict(head_h=0.010, shank=0.025, pitch=0.002),
-    20: dict(head_h=0.020, shank=0.045, pitch=0.0025),
 }
 
 
@@ -164,7 +163,8 @@ def _nut(size: int) -> AssemblyVariant:
 
 
 # M4 dropped: 3.2 mm hex is below the Robotiq pad band when open on the board.
-for _size in (8, 12, 16, 20):
+# M20 dropped from the benchmark suite (assets remain under assets/parts/used/nuts).
+for _size in (8, 12, 16):
     VARIANTS[f"nut_M{_size}"] = _nut(_size)
 
 # ---------------------------------------------------------------------------
