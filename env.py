@@ -7,20 +7,23 @@ this file declares the sim, and the sim child process runs it. Serve
     OMNI_KIT_ACCEPT_EULA=YES python -m hud.environment.server env.py --port 8765
 
 Scene config is the factory signature: ``task`` / ``num_envs`` / ``embodiment``
-/ ``reward`` / ``expert_takeover`` are build params (GymBridge rebuilds the
-scene when one changes), with ``ASSEMBLY_*`` env vars as deploy-time defaults.
+/ ``reward`` are build params (GymBridge rebuilds the scene when one changes),
+with ``ASSEMBLY_*`` env vars as deploy-time defaults. Optional CG-DAgger
+(``expert_takeover``) wraps the bare Arena env via ``scripts/experts/rl``.
 Episodic args (seed) go through ``sim.reset``.
 
-Two agent surfaces share one sim process (see ``tool_bridge.py``):
+Two agent surfaces share one sim process (see ``agents/``):
 - ``openpi/0`` (``robot``) — VLA joint control via the ``assembly`` template
 - ``mcp`` (``tools``) — LLM end-effector tools via the ``assembly_agent`` template
 """
 
 import os
+import sys
 from pathlib import Path
 
+from agents import AssemblyToolBridge
+from agents.prompt import agent_prompt
 from hud import Environment
-from tool_bridge import AssemblyToolBridge
 
 # One Kit app per process, booted on first env build. Isaac lives ONLY in the
 # sim child (env.gym spawns `env.py:make_env` in its own process); the server
@@ -32,6 +35,11 @@ _DEFAULT_TASK = os.environ.get("ASSEMBLY_TASK", "peg_round_8mm")
 
 # LLM path always rebuilds on the differential-IK embodiment (7-D EEF deltas).
 _EEF_EMBODIMENT = "droid_differential_ik"
+
+# scripts/ on path so ``experts.rl.takeover`` imports cleanly.
+_SCRIPTS = Path(__file__).resolve().parent / "scripts"
+if str(_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS))
 
 
 def _env_flag(name: str, default: str = "0") -> bool:
@@ -62,11 +70,16 @@ def make_env(
         expert_takeover = expert_takeover.strip().lower() in ("1", "true", "yes", "on")
     mode = takeover_mode or os.environ.get("ASSEMBLY_TAKEOVER_MODE", "grasp")
 
-    return make_assembly_env(
+    # Bare Arena env; CG-DAgger is an optional outer wrap (not part of the package).
+    env = make_assembly_env(
         task=task, num_envs=num_envs, embodiment=embodiment, reward=reward,
-        expert_takeover=bool(expert_takeover),
-        takeover_mode=str(mode),
     )
+    if expert_takeover:
+        from experts.rl.takeover import ExpertTakeover
+
+        env = ExpertTakeover(env, task=task, takeover_mode=str(mode))
+        print(f"[env] expert_takeover ON for {task} (mode={mode})", flush=True)
+    return env
 
 
 env = Environment(name="assembly-bench")
@@ -118,43 +131,25 @@ async def assembly(
     yield await sim.result(token=ep["token"])
 
 
-def _agent_prompt(instruction: str, *, guided: bool) -> str:
-    """Prompt for the MCP tool surface: same task, fingertip waypoints instead of joints."""
-    parts = (
-        "You control a Franka arm with a Robotiq gripper over a tabletop assembly task.\n"
-        f"Task: {instruction}\n\n"
-        "Tools: look, move_to, grasp, release, get_state. Coordinates are millimetres in the "
-        "robot base frame: +x away from the robot, +y to its left, +z up, z=0 at the tabletop. "
-        "move_to aims the fingertip plane (not the flange). The motion stalls on contact — "
-        "compare the reply pose to what you asked for; a gap means something is in the way.\n\n"
-        "Typical plan: look → hover above the loose part → descend → grasp → lift clear of the "
-        "stand → move above the target → lower to seat → release. Look after every move. "
-        "Keep z above ~20 mm unless you are grasping or inserting. Budget is tight; avoid "
-        "long open-loop drifts.\n"
-    )
-    if guided:
-        parts += (
-            "\nGuided mode: every tool reply includes the true loose-part and target poses "
-            "in millimetres — use them; still look to confirm contact and grasp.\n"
-        )
-    else:
-        parts += (
-            "\nVision mode: part poses are NOT given. Localize from look(front) / look(wrist) "
-            "and the fingertip pose in each reply.\n"
-        )
-    return parts
-
-
 @env.template(id="assembly_agent")
 async def assembly_agent(
     task: str = _DEFAULT_TASK,
     seed: int = 0,
     guided: bool = True,
+    episode_length_s: float = 80.0,
 ):
-    """One assembly episode for an LLM (MCP end-effector tools)."""
+    """One assembly episode for an LLM (MCP end-effector tools).
+
+    Default ``episode_length_s=80`` → ~1200 ticks @ 15 Hz (2× the VLA peg
+    timeout). VLA ``assembly`` does not pass this, so peg variants stay at 40 s.
+    """
     # Differential IK rebuilds the scene when the prior episode was joint-control.
     ep = await sim.reset(
-        task=task, seed=seed, embodiment=_EEF_EMBODIMENT, guided=guided,
+        task=task,
+        seed=seed,
+        embodiment=_EEF_EMBODIMENT,
+        guided=guided,
+        episode_length_s=episode_length_s,
     )
-    yield _agent_prompt(ep["prompt"], guided=guided)
+    yield agent_prompt(ep["prompt"], guided=guided)
     yield await sim.result(token=ep["token"])

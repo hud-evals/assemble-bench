@@ -1,10 +1,11 @@
-"""MCP tool surface for the assembly sim, served from inside the sim process.
+"""GymBridge subclass: openpi wire + in-process MCP tools for LLM control.
 
 A VLA drives this env over the openpi wire (8-D joint targets at 15 Hz); an LLM
-drives the *same* env through the tools here, so a tool call steps the sim
-directly instead of round-tripping actions over a socket. Both paths share the
-scene, the reset and the success check — only the control surface differs, and
-the bridge publishes both capabilities so the agent binds whichever it speaks.
+drives the *same* env through the tools in ``agents.tools``, so a tool call
+steps the sim directly instead of round-tripping actions over a socket. Both
+paths share the scene, the reset and the success check — only the control
+surface differs, and the bridge publishes both capabilities so the agent binds
+whichever it speaks.
 
 Tools speak fingertip waypoints in millimetres, which the
 ``droid_differential_ik`` embodiment turns into joint targets: the LLM never
@@ -18,17 +19,22 @@ import asyncio
 import contextlib
 import io
 import socket
-from typing import Any, Literal
+import sys
+from pathlib import Path
+from typing import Any
 
 import numpy as np
-from fastmcp import FastMCP
-from fastmcp.utilities.types import Image
 from PIL import Image as PilImage
 
 from hud.capabilities import Capability
 from hud.environment.robot import GymBridge
 from hud.environment.robot.gym import action_dim_of, flatten_observation
 from hud.telemetry.robot import to_numpy
+
+# load_module(bridge.py) only puts agents/ on path; package imports need the bench root.
+_BENCH_ROOT = str(Path(__file__).resolve().parent.parent)
+if _BENCH_ROOT not in sys.path:
+    sys.path.insert(0, _BENCH_ROOT)
 
 # Servo caps per 15 Hz control tick: 4 mm / 3 deg, i.e. ~6 cm/s — slow enough
 # that contact stalls the arm instead of ramming a part through the table.
@@ -44,11 +50,13 @@ ACTION_SCALE = 0.5
 TOOL_LEN = 0.1717
 # Ticks a gripper command gets to actually open/close the fingers.
 GRIP_TICKS = 15
+# look(front|wrist) → Arena camera_obs keys (DROID wrist mount, not tool_cam).
 CAMERAS = {"front": "camera_obs/front_cam_rgb", "wrist": "camera_obs/wrist_camera_rgb"}
-
-# The tool server and the one bridge in this process (bound in ``start``).
-server: FastMCP = FastMCP("assembly-arm")
-bridge: AssemblyToolBridge
+# Peg presentation geometry (mm): stand top ≈ first contact from above; mid-shaft
+# grasp sits above that. Asset-root z in guided poses is ~0, not a grasp height.
+STAND_TOP_Z_MM = 30.0
+GRASP_Z_MM = 45.0
+HOVER_Z_MM = 90.0
 
 
 # ── quaternion math on the wire's wxyz convention ─────────────────────────────
@@ -106,10 +114,14 @@ class AssemblyToolBridge(GymBridge):
 
     async def start(self) -> None:
         await super().start()  # openpi wire + contract first
-        global bridge  # the tools below drive whichever bridge this process serves
-        bridge = self
+        # Bind tools to this process's bridge, then accept MCP on a free port.
+        from agents import tools as tools_mod
+
+        tools_mod.bridge = self
         self._mcp_task = asyncio.create_task(
-            server.run_http_async(host="127.0.0.1", port=self._mcp_port, show_banner=False)
+            tools_mod.server.run_http_async(
+                host="127.0.0.1", port=self._mcp_port, show_banner=False
+            )
         )
         for _ in range(100):  # publish the address only once it accepts
             with contextlib.suppress(OSError):
@@ -132,14 +144,38 @@ class AssemblyToolBridge(GymBridge):
             Capability.mcp(name="tools", url=f"http://127.0.0.1:{self._mcp_port}/mcp"),
         ]
 
-    def reset(self, guided: bool = False, **task_args: Any) -> str:
-        """Episode reset; ``guided`` adds privileged part poses to every tool reply."""
+    def reset(
+        self,
+        guided: bool = False,
+        episode_length_s: float | None = None,
+        **task_args: Any,
+    ) -> str:
+        """Episode reset; ``guided`` adds privileged part poses + absolute ``move_to``.
+
+        ``episode_length_s`` stretches the sim timeout for LLM tool control only
+        (VLA ``assembly`` leaves it unset → variant default, e.g. pegs at 40 s).
+        """
         prompt = super().reset(**task_args)
         self._guided, self._ticks = bool(guided), 0
         self.grip, self.yaw, self.last_move = 1.0, 0.0, ""
         # The reset pose already points the tool straight down; the servo holds it.
         self._home_quat = self.read("policy/eef_quat")
         self._origin = to_numpy(self._unwrapped.scene.env_origins)[0]
+        # Live property: max_episode_length = ceil(cfg.episode_length_s / step_dt).
+        if episode_length_s is not None:
+            self._unwrapped.cfg.episode_length_s = float(episode_length_s)
+            print(
+                f"[env] LLM episode_length_s → {float(episode_length_s):g}s "
+                f"({int(self._unwrapped.max_episode_length)} ticks)",
+                flush=True,
+            )
+        # list_tools must match mode: absolute move_to only when guided.
+        from agents.tools import server
+
+        if self._guided:
+            server.enable(names={"move_to"}, components={"tool"})
+        else:
+            server.disable(names={"move_to"}, components={"tool"})
         return prompt
 
     # ── sim-thread reads and motion (queued via _run_on_sim by the tools) ───────
@@ -184,26 +220,32 @@ class AssemblyToolBridge(GymBridge):
                 "embodiment='droid_differential_ik'"
             )
 
-    def servo_to(self, pos: np.ndarray, yaw: float, *, max_ticks: int) -> None:
-        """Step the sim toward a fingertip pose, one clipped delta per control tick.
+    def servo_pose(self, pos: np.ndarray, quat: np.ndarray, *, max_ticks: int) -> None:
+        """Closed-loop servo to a fingertip pose (world/base translation + wxyz quat).
 
-        Closed loop, so it either converges, runs out of ticks, or stalls
-        against contact — the caller reports where the arm ended up.
+        Relative DIK only closes a fraction of each commanded delta per tick
+        (PD/DLS lag) — open-loop therefore undershoots badly (~0.3×). Recomputing
+        the residual every tick is what makes ``move_to`` / ``nudge`` accurate.
         """
         self.check_eef()
-        # Wrist yaw is applied on top of the (tool-down) reset orientation.
-        goal_quat = quat_mul(np.array([np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)]), self._home_quat)
         for _ in range(max_ticks):
             dp = np.clip(pos - self.read_tcp(), -STEP_M, STEP_M)
             dr = np.clip(
-                rotvec_between(self.read("policy/eef_quat"), goal_quat), -STEP_RAD, STEP_RAD
+                rotvec_between(self.read("policy/eef_quat"), quat), -STEP_RAD, STEP_RAD
             )
             if np.abs(dp).max() < POS_TOL and np.abs(dr).max() < ROT_TOL:
                 return
+            # Arena's action term multiplies by scale=0.5 — undo so STEP_* are real.
             self.step(np.concatenate([dp / ACTION_SCALE, dr / ACTION_SCALE, [self.grip]]))
             self._ticks += 1
             if self.episode_over:
                 return
+
+    def servo_to(self, pos: np.ndarray, yaw: float, *, max_ticks: int) -> None:
+        """Step toward a fingertip waypoint; wrist yaw is relative to the reset pose."""
+        # Wrist yaw on top of the (tool-down) reset orientation.
+        goal_quat = quat_mul(np.array([np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)]), self._home_quat)
+        self.servo_pose(pos, goal_quat, max_ticks=max_ticks)
 
     def hold(self, ticks: int) -> None:
         """Hold the pose for ``ticks`` steps — lets the fingers close and parts settle."""
@@ -212,6 +254,46 @@ class AssemblyToolBridge(GymBridge):
             if self.episode_over:
                 return
             self.step(np.concatenate([np.zeros(6), [self.grip]]))
+            self._ticks += 1
+
+    def nudge_delta(self, dp_m: np.ndarray, dr_rad: np.ndarray, *, max_ticks: int) -> None:
+        """Displace from the current pose by ``dp_m`` / ``dr_rad`` (DOF debug).
+
+        Translation: closed-loop on fingertip with ``dr=0``. Holding orientation
+        in that loop couples into TCP through the tool lever arm (DOF ladder v2
+        chaos). Rotation: open-loop only — tip motion is the observable; do not
+        pin TCP (that would fight the lever-arm tip shift). Relative DIK delivers
+        ~0.3× per tick, so rot budget is sized from that, not the tool's slack.
+        """
+        self.check_eef()
+        dp_m = np.asarray(dp_m, dtype=float)
+        dr_rad = np.asarray(dr_rad, dtype=float)
+        translating = float(np.linalg.norm(dp_m)) > 1e-9
+        rotating = float(np.linalg.norm(dr_rad)) > 1e-9
+        goal_tcp = self.read_tcp() + dp_m
+        # ~0.3× open-loop delivery → inflate command and (for rot-only) trim ticks.
+        ol_gain = 1.0 / 0.3
+        if rotating and not translating:
+            max_ticks = min(
+                max_ticks,
+                int(np.ceil(np.linalg.norm(dr_rad) * ol_gain / STEP_RAD)) + 15,
+            )
+        cmd_r = (
+            np.clip(dr_rad * ol_gain / max(1, max_ticks), -STEP_RAD, STEP_RAD)
+            if rotating
+            else np.zeros(3)
+        )
+        for _ in range(max_ticks):
+            if self.episode_over:
+                return
+            if translating:
+                err_p = goal_tcp - self.read_tcp()
+                if np.abs(err_p).max() < POS_TOL:
+                    return
+                cmd_p = np.clip(err_p, -STEP_M, STEP_M)
+            else:
+                cmd_p = np.zeros(3)
+            self.step(np.concatenate([cmd_p / ACTION_SCALE, cmd_r / ACTION_SCALE, [self.grip]]))
             self._ticks += 1
 
     def report(self) -> str:
@@ -233,76 +315,12 @@ class AssemblyToolBridge(GymBridge):
                 f"z={held[2] * 1000:.0f}, target at x={fixed[0] * 1000:.0f} "
                 f"y={fixed[1] * 1000:.0f} z={fixed[2] * 1000:.0f} mm"
             )
+            # Origins are roots at the table — not pad heights. Give the recipe z's.
+            lines.append(
+                f"heights: stand_top≈{STAND_TOP_Z_MM:.0f} mm (first contact from above), "
+                f"grasp≈{GRASP_Z_MM:.0f} mm (mid-shaft), hover≈{HOVER_Z_MM:.0f} mm — "
+                f"do not grasp at part z; if Δz→0 near z={STAND_TOP_Z_MM:.0f}, you are on the stand"
+            )
         if self.episode_over:
             lines.append(f"episode over: {'SOLVED' if self._success.any() else 'not solved'}")
         return "\n".join(lines)
-
-
-# ── the tools an LLM agent sees ───────────────────────────────────────────────
-
-
-@server.tool
-async def look(camera: Literal["front", "wrist"] = "front") -> list[Any]:
-    """Look at the workspace. Free: it costs no sim time, so look often.
-
-    ``front`` is a fixed view of the whole table from the far side; ``wrist``
-    looks down the gripper and is the one that shows whether the pads are
-    actually straddling a part.
-    """
-    # Sim touches are queued onto the sim thread — the bridge's own mechanism.
-    png = await bridge._run_on_sim(bridge.camera_png, CAMERAS[camera])
-    return [await bridge._run_on_sim(bridge.report), Image(data=png, format="png")]
-
-
-@server.tool
-async def move_to(x_mm: float, y_mm: float, z_mm: float, yaw_deg: float | None = None) -> str:
-    """Move the fingertips to a waypoint in the robot base frame, then stop.
-
-    Millimetres: +x away from the robot, +y to its left, +z up, z=0 at the
-    tabletop. ``yaw_deg`` turns the wrist (0 = the starting angle). The motion
-    is closed-loop and stalls on contact, so compare the position in the reply
-    against what you asked for — a gap means something is in the way. Costs sim
-    time roughly in proportion to the distance travelled.
-    """
-    if bridge.episode_over:
-        return "episode is over; no more moves.\n" + await bridge._run_on_sim(bridge.report)
-    goal = np.array([x_mm, y_mm, z_mm]) / 1000
-    if yaw_deg is not None:
-        bridge.yaw = float(np.radians(yaw_deg))
-    start = await bridge._run_on_sim(bridge.read_tcp)
-    # Budget the servo by distance (plus slack to settle), never the whole episode.
-    ticks = min(150, int(np.linalg.norm(goal - start) / STEP_M) + 40)
-    await bridge._run_on_sim(bridge.servo_to, goal, bridge.yaw, max_ticks=ticks)
-    reached = await bridge._run_on_sim(bridge.read_tcp)
-    off = np.abs(goal - reached).max() * 1000
-    bridge.last_move = (
-        f"last move: asked for x={x_mm:.0f} y={y_mm:.0f} z={z_mm:.0f}, "
-        + ("arrived" if off < 3 else f"stopped {off:.0f} mm short (blocked or out of reach)")
-    )
-    return await bridge._run_on_sim(bridge.report)
-
-
-@server.tool
-async def grasp() -> str:
-    """Close the gripper on whatever is between the pads.
-
-    ``finger_closure`` in the reply tells you what happened: 1.00 means the
-    fingers closed on nothing, a value in between means they are pinching a part.
-    """
-    bridge.grip = -1.0  # binary term: negative closes
-    await bridge._run_on_sim(bridge.hold, GRIP_TICKS)
-    return await bridge._run_on_sim(bridge.report)
-
-
-@server.tool
-async def release() -> str:
-    """Open the gripper and let the part settle."""
-    bridge.grip = 1.0
-    await bridge._run_on_sim(bridge.hold, GRIP_TICKS)
-    return await bridge._run_on_sim(bridge.report)
-
-
-@server.tool
-async def get_state() -> str:
-    """Report the arm pose, gripper and remaining budget without moving anything."""
-    return await bridge._run_on_sim(bridge.report)
