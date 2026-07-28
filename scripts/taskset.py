@@ -5,11 +5,8 @@ These JSON files are only *which rows to run* for ``hud eval``.
 
     python scripts/taskset.py
 
-Then::
-
-    hud eval tasks/vla/all.json <agent> --full --runtime tcp://127.0.0.1:8765
-    hud eval tasks/vla/smoke.json <agent> --runtime tcp://127.0.0.1:8765
-    hud eval tasks/vla/debug.json <agent> --runtime tcp://127.0.0.1:8765
+Then run a VLA via ``examples/run_eval.py`` (see the repo README). The LLM tool
+path under ``tasks/agent/`` is in development.
 """
 
 from __future__ import annotations

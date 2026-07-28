@@ -3,14 +3,14 @@
 **Contact-rich robot assembly tasks for evaluating and training VLAs.**
 Tested headless on L40S, RTX 6000 Ada, and RTX PRO 6000 Blackwell GPUs.
 
-14 tabletop assembly tasks — insert pegs, mesh gears, thread nuts — modelled on the
+14 tabletop assembly tasks – insert pegs, mesh gears, thread nuts – modelled on the
 [NIST ATB-1 assembly taskboard](https://www.nist.gov/el/intelligent-systems-division-73500/robotic-grasping-and-manipulation-assembly/assembly).
 The robot is the [DROID](https://arxiv.org/abs/2403.12945) platform (Franka Panda 7-DoF +
 Robotiq 2F-85), so any DROID checkpoint plugs in without retargeting. Every task is scored
 on real assembly geometry rather than a proximity heuristic: the part has to actually seat,
 and a gear that clashes teeth or a nut that cross-threads cannot descend.
 
-- Writeup and baseline results: [Benchmarking Robot Models on Contact-Rich Assembly](https://www.hud.ai/blog/assembly-benchmark)
+- Blog post: [Benchmarking Robot Models on Contact-Rich Assembly](https://www.hud.ai/blog/assembly-benchmark)
 - Demonstration dataset (1355 episodes): [`hud-evals/AssemblyBench`](https://huggingface.co/datasets/hud-evals/AssemblyBench)
 - Reference checkpoints: [`pi05-AssemblyBench-12k`](https://huggingface.co/hud-evals/pi05-AssemblyBench-12k) (BC) · [`pi05-AssemblyBench-cgdagger-r3`](https://huggingface.co/hud-evals/pi05-AssemblyBench-cgdagger-r3) (final)
 
@@ -20,12 +20,12 @@ and a gear that clashes teeth or a nut that cross-threads cannot descend.
 |---|---|---|---|
 | 🟦 | Round peg insertion | `peg_round_4mm` `peg_round_8mm` `peg_round_12mm` `peg_round_16mm` | insertion |
 | 🟪 | Square peg insertion | `peg_square_4mm` `peg_square_8mm` `peg_square_12mm` `peg_square_16mm` | alignment, insertion |
-| 🟩 | Gear meshing | `gear_small` `gear_medium` `gear_large` | alignment, insertion, fitting |
-| 🟧 | Nut threading | `nut_M8` `nut_M12` `nut_M16` | alignment, threading |
+| 🟧 | Gear meshing | `gear_small` `gear_medium` `gear_large` | alignment, insertion, fitting |
+| 🟩 | Nut threading | `nut_M8` `nut_M12` `nut_M16` | alignment, threading |
 
 Peg names are stem diameters in mm. Pegs start upright in a presentation bore beside their
 hole; gears and nuts start flat on the table. Square pegs are rectangular, so they are not
-yaw-symmetric — the hole is re-clocked every episode and the policy has to match it. Part
+yaw-symmetric – the hole is re-clocked every episode and the policy has to match it. Part
 poses are jittered every episode.
 
 A 15th task, `debug`, puts an apple in a bowl. It is a hello-world check that the
@@ -33,7 +33,7 @@ plumbing works, not part of the benchmark.
 
 ## Requirements
 
-- NVIDIA GPU with RT cores — 16 GB+ for the simulator, 24 GB+ if a VLA shares the same GPU
+- NVIDIA GPU with RT cores – 16 GB+ for the simulator, 24 GB+ if a VLA shares the same GPU
   (datacenter cards without RT cores, such as A100 and H100, cannot render)
 - Ubuntu 22.04+ (Isaac Sim 6 wheels need GLIBC >= 2.35)
 - Isaac Sim 6.x and Python 3.10+
@@ -58,15 +58,63 @@ Arena stays an unmodified submodule; this repo plugs into it through its registr
 
 ## Running the benchmark
 
-There are two ways to run it. **Path A** drives Isaac Sim directly and is the shortest
-route if you already have Isaac Sim on the machine. **Path B** serves the benchmark over
-the network as a [HUD](https://hud.ai) environment, which is how you evaluate VLAs and
-LLM agents, batch across parallel envs, and get per-episode traces.
+Two paths. **Path A (HUD)** is the usual one for evaluating VLAs, parallel envs, and
+optional per-episode traces. **Path B** drives Isaac Sim directly if you just want the
+sim.
 
-### Path A — Isaac Sim directly
+### Path A – HUD
 
-Nothing to install beyond the step above. From `submodules/IsaacLab-Arena`, using Arena's
-external-environment CLI:
+Serve the environment once, then attach a policy over TCP. The simulator and the policy
+can live in different environments (or on different machines).
+
+**1. Serve the env**
+
+```bash
+pip install hud-python          # into the Isaac Sim environment
+OMNI_KIT_ACCEPT_EULA=YES python -m hud.environment.server env.py --port 8765
+```
+
+Wait for `HUD_SERVE_PORT=8765` (boot takes a few minutes). Prefer not to install Isaac Sim
+on the host? Use the self-contained image in [`docker/docker.md`](docker/docker.md).
+
+**2. Run a VLA**
+
+The wire is DROID: front + wrist RGB at 640×360, joint positions, 8-D action (7 joint
+targets + binary gripper) at 15 Hz. [`examples/`](examples/) loads our final pi0.5
+checkpoint from Hugging Face and evaluates a task:
+
+```bash
+pip install -r examples/requirements.txt   # into a separate agent environment
+python examples/run_eval.py --task peg_round_16mm --num-envs 4
+```
+
+| Flag | Default | Notes |
+|---|---|---|
+| `--task` | `peg_round_16mm` | any task id from the table above, or `debug` |
+| `--num-envs` | `4` | parallel episodes in one sim process |
+| `--waves` | `1` | sequential batches (`15 × 2` = the writeup's 30-ep protocol) |
+| `--checkpoint` | `hud-evals/pi05-AssemblyBench-cgdagger-r3` | HF repo id or local dir |
+| `--runtime` | `tcp://127.0.0.1:8765` | where the env is serving |
+
+**3. Stream traces (optional)**
+
+Everything grades locally with no account. Set `HUD_API_KEY` to also upload each episode's
+video, actions, and reward to [hud.ai](https://hud.ai):
+
+```bash
+export HUD_API_KEY=sk-hud-...
+python examples/run_eval.py --task peg_round_16mm --num-envs 4
+```
+
+Without the key, nothing is sent anywhere.
+
+> An LLM tool-use path (`agents/`, `tasks/agent/`) is **in development** and not ready
+> for use yet.
+
+### Path B – Isaac Sim directly
+
+Nothing to install beyond the Install section. From `submodules/IsaacLab-Arena`, using
+Arena's external-environment CLI:
 
 ```bash
 python isaaclab_arena/evaluation/policy_runner.py \
@@ -83,43 +131,6 @@ python isaaclab_arena/evaluation/policy_runner.py \
 | `--reward` | `none` | `staged` / `potential` add dense reward for RL |
 | `--hdr` | `asm_machine_shop` | any Arena HDR registry name, or `none` |
 | `--num_envs` | `1` | parallel envs on one GPU |
-
-### Path B — HUD
-
-Install [`hud-python`](https://github.com/hud-evals/hud-python) into the Isaac Sim
-environment and serve the benchmark:
-
-```bash
-pip install hud-python
-OMNI_KIT_ACCEPT_EULA=YES python -m hud.environment.server env.py --port 8765
-```
-
-Boot takes a few minutes; wait for `HUD_SERVE_PORT=8765`. There is also a self-contained
-container image if you would rather not install Isaac Sim on the host — see
-[`docker/docker.md`](docker/docker.md).
-
-Agents connect over TCP, so they run in their own environment and can be on another
-machine.
-
-**LLM agents** get end-effector tools (`move_to`, `nudge`, `grasp`, `look`) over MCP and
-run straight from the CLI:
-
-```bash
-hud eval tasks/agent/pegs.json claude --runtime tcp://127.0.0.1:8765
-```
-
-**VLAs** get the DROID wire (front + wrist camera at 640x360, joint positions, 8-D action
-of 7 joint targets plus a binary gripper, 15 Hz) and run through the Python SDK, because
-the `hud eval` CLI only takes built-in LLM agent types. See
-[`examples/`](examples/) for a complete runnable agent:
-
-```bash
-python examples/run_eval.py --task peg_round_16mm --num-envs 4
-```
-
-Either agent type grades locally and needs no account. Setting `HUD_API_KEY` additionally
-streams each episode's trace — video, actions, reward — to [hud.ai](https://hud.ai) so you
-can watch rollouts and diff checkpoints. Without the key nothing is sent anywhere.
 
 ## Test your install
 
@@ -145,10 +156,10 @@ assembly_bench/
 ├── assembly_bench/          the pip-installable Arena environment package
 │   ├── environments/assembly/   variants.py (the task catalog), scene, tasks, rewards
 │   └── assets/parts/            pegs, gears, nuts, NIST board
-├── examples/                pi0.5 agent + eval runner (start here)
+├── examples/                pi0.5 VLA + eval runner (start here)
 ├── tasks/                   HUD run lists
 ├── scripts/                 preview, taskset regeneration, scripted experts
-├── agents/                  MCP end-effector tools for the LLM path
+├── agents/                  LLM tool path (in development)
 ├── docker/                  self-contained Isaac + HUD image
 ├── env.py, contract.json    HUD entry point and its observation/action wire
 └── submodules/IsaacLab-Arena    unmodified Arena (git submodule)
@@ -157,8 +168,8 @@ assembly_bench/
 ### Adding your own task
 
 Tasks are pure Python data, not USD scenes. Add an entry to `VARIANTS` in
-[`variants.py`](assembly_bench/environments/assembly/variants.py) — which parts to spawn,
-where, and the seat geometry that defines success — then run `python scripts/taskset.py`
+[`variants.py`](assembly_bench/environments/assembly/variants.py) – which parts to spawn,
+where, and the seat geometry that defines success – then run `python scripts/taskset.py`
 to refresh the HUD run lists. See [`tasks/README.md`](tasks/README.md).
 
 ### Dense rewards for RL

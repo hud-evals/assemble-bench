@@ -13,8 +13,9 @@ with ``ASSEMBLY_*`` env vars as deploy-time defaults. Optional CG-DAgger
 Episodic args (seed) go through ``sim.reset``.
 
 Two agent surfaces share one sim process (see ``agents/``):
-- ``openpi/0`` (``robot``) — VLA joint control via the ``assembly`` template
-- ``mcp`` (``tools``) — LLM end-effector tools via the ``assembly_agent`` template
+- ``openpi/0`` (``robot``) – VLA joint control via the ``assembly`` template
+- ``mcp`` (``tools``) – LLM end-effector tools via the ``assembly_agent`` template
+  (in development; not ready for use yet)
 """
 
 import os

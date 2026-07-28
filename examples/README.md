@@ -10,7 +10,7 @@ starting point for your own agent.
 ## Setup
 
 The agent and the simulator are separate processes that talk over TCP, so they need
-separate environments — and can live on separate machines. Install the agent side into
+separate environments – and can live on separate machines. Install the agent side into
 any Python 3.10+ environment:
 
 ```bash
@@ -73,8 +73,8 @@ on [`hud-evals/AssemblyBench`](https://huggingface.co/datasets/hud-evals/Assembl
 | Checkpoint | What it is |
 |---|---|
 | [`hud-evals/pi05-AssemblyBench-12k`](https://huggingface.co/hud-evals/pi05-AssemblyBench-12k) | behavior-cloning baseline, trained on all 14 tasks |
-| [`hud-evals/pi05-AssemblyBench-cgdagger-r3`](https://huggingface.co/hud-evals/pi05-AssemblyBench-cgdagger-r3) | BC + 3 rounds of code-gated DAgger — the default here |
+| [`hud-evals/pi05-AssemblyBench-cgdagger-r3`](https://huggingface.co/hud-evals/pi05-AssemblyBench-cgdagger-r3) | BC + 3 rounds of code-gated DAgger – the default here |
 
 The CG-DAgger checkpoint was trained only on `peg_round_8mm` corrections, so the other
 round-peg sizes measure whether the recovery transfers. Base DROID checkpoints score 0%
-here without task finetuning — the writeup covers why.
+here without task finetuning – the writeup covers why.
