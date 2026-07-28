@@ -1,10 +1,12 @@
 __pycache__/
 *.egg-info/
+.pytest_cache/
 submodules/
 .venv/
 data/
+.hud_eval.toml
 # NvStreamer WebRTC trace logs (written to CWD by the livestream stack)
 *.etli
 
-# Local debug USD props (not part of the benchmark)
+# Local debug USD props (apple/bowl; not part of the NIST matrix)
 assembly_bench/assets/parts/debug/

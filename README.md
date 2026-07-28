@@ -44,13 +44,29 @@ assembly_bench/
 ├── assembly_bench/                     the pip-installable package
 │   ├── pyproject.toml
 │   ├── environments/assembly/
+│   │   ├── assembly.py                 AssemblyBenchEnvironment
+│   │   ├── variants.py                 15+debug variants as pure data
 │   │   ├── scene.py                    @register_asset parts (asm_* prefix)
-│   │   ├── tasks.py                    seat-geometry success + NISTAssemblyTask + reset jitter
-│   │   ├── variants.py                 the 15+debug variants as pure data (benchmark manifest)
-│   │   └── assembly.py                 AssemblyBenchEnvironment (ExampleEnvironmentBase)
-│   └── assets/parts/                   generated USDs (pegs, holes, gears, NIST board, YCB)
-├── eval/                               batch eval: jobs config for all variants
-└── scripts/preview_assembly.py         renders a still + prints part poses
+│   │   ├── tasks.py                    seat-geometry success + reset jitter
+│   │   ├── embodiments.py              softmimic DROID register
+│   │   ├── cameras.py                  front + wrist framing
+│   │   ├── observations.py             privileged part poses / arm vel
+│   │   └── rewards.py                  dense RL (--reward staged|potential)
+│   └── assets/parts/used/              pegs, gears, nuts, NIST board
+├── tasks/                              HUD run suites (not scene defs)
+│   ├── vla/                            template "assembly" (openpi)
+│   │   ├── all.json / smoke.json
+│   └── agent/                          template "assembly_agent" (MCP)
+│       └── pegs.json
+├── scripts/
+│   ├── taskset.py                      regenerate tasks/* from variants.py
+│   ├── preview_assembly.py             still + pose probe
+│   └── experts/                        scripted demos + optional CG-DAgger
+│       ├── peg.py / gear.py / nut.py
+│       ├── run_expert.py / record.py
+│       ├── rl/                         online fail→expert takeover
+│       └── util/                       LeRobot HDF5 convert / push
+└── env.py                              HUD EnvHub entry (optional)
 ```
 
 ## Install
@@ -94,8 +110,35 @@ Robotiq mimic overlay + solver/PD headroom; see
 for the untuned stock DROID. Any `franka_*` embodiment also works and gets
 Arena's Factory-tuned high-PD arm config. Add
 `--hdr <name>` (any Arena HDR-registry entry, e.g. `carpentry_shop_robolab`)
-to light the scene with an HDRI dome. To run all variants as a batch, see
-[`eval/README.md`](eval/README.md).
+to light the scene with an HDRI dome.
+
+### HUD task suites
+
+Scene variants are defined in `variants.py`. Run lists for `hud eval` live under
+[`tasks/`](tasks/README.md) — `vla/` for the openpi template, `agent/` for MCP
+tools. Regenerate after editing variants: `python scripts/taskset.py`.
+
+```bash
+hud eval tasks/vla/smoke.json <agent> --runtime tcp://127.0.0.1:8765
+hud eval tasks/vla/all.json <agent> --full --runtime tcp://127.0.0.1:8765
+```
+
+### Dense rewards (custom RL loops)
+
+Eval leaves rewards off (`--reward none`). For training, pass
+`--reward staged` or `--reward potential` (see `rewards.py`). The same flag is
+on `make_assembly_env(..., reward=...)` for programmatic loops.
+
+### Scripted experts / demos
+
+```bash
+python scripts/experts/run_expert.py --headless --task peg_round_8mm --num_envs 4
+```
+
+See the docstring on `run_expert.py` for HDF5 recording recipes (dense-reward
+peg demos, nut tiers). Online CG-DAgger (fail latch → peg expert) lives under
+`scripts/experts/rl/` and is wired by the HUD entry (`env.py`) when
+`ASSEMBLY_EXPERT_TAKEOVER=1` — it is not part of the Arena env package.
 
 ## Design notes (what the port keeps from the source benchmark)
 
@@ -128,27 +171,16 @@ to light the scene with an HDRI dome. To run all variants as a batch, see
   camera is the embodiment's calibrated Robotiq mount, verified
   frame-for-frame against the source benchmark's recorded demos. Model-input
   sizing (openpi's `resize_with_pad` to 224x224) belongs to the policy
-  adapter, as in the chess bench's pi0.5 eval — not the env.
-  Control runs at 15 Hz (decimation 4 at 60 Hz physics, the pi0.5-DROID
-  rate), and rendering happens once per policy step, so camera observations
-  and recorded videos (`--record_camera_video`) are 15 fps.
+  adapter — not the env. Control runs at 15 Hz (decimation 4 at 60 Hz physics),
+  and rendering happens once per policy step, so camera observations and
+  recorded videos (`--record_camera_video`) are 15 fps.
 
-### Not ported (yet)
-- Dense/partial-credit reward and the wrist F/T sensor: Arena's metric surface
-  is `SuccessRateMetric` + `ObjectMovedRateMetric` here.
-- The visual perturbation library (machine-shop HDRIs, OSB tabletop MDL);
-  `--hdr` exposes Arena's HDR registry as the background axis instead.
-- Seat validation status carries over from the source benchmark: the peg
-  family, `gear_medium`, and `nut_M16` are seat-validated end-to-end;
-  gear `small`/`large` and the generated M4–M20 nut tiers are authored and
-  geometrically verified (watertight, open bore) but a blind press does not
-  seat them — by design, they need a contact-search / threading policy.
+### Seat validation status
 
-## Cosmos3-Policy-DROID
-
-Zero-shot Cosms DROID eval (remote OpenPI policy server + HUD agent) is
-documented in [`COSMOS.md`](COSMOS.md) — setup, scripts under `scripts/cosmos_*`
-/ `eval_cosmos.py`, and camera-masking notes.
+The peg family, `gear_medium`, and `nut_M16` are seat-validated end-to-end;
+gear `small`/`large` and the generated nut tiers are authored and
+geometrically verified (watertight, open bore) but a blind press does not
+seat them — by design, they need a contact-search / threading policy.
 
 ## Toward LeRobot EnvHub
 
