@@ -14,7 +14,7 @@ Writes factory_* stems so a parallel gen_* density worker is not clobbered.
 
     /isaac-sim/python.sh scripts/convert_factory_nutbolt_usds.py \
         --src /factory_assets/IsaacGymEnvs/assets/factory \
-        --out assembly_bench/assets/parts \
+        --out assembly_bench/assets/parts/used/nuts \
         --sizes 16 --tolerances loose
 """
 
