@@ -61,8 +61,6 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
     name: str = "assembly_bench"
 
     def get_env(self, args_cli: argparse.Namespace):
-        import os
-
         import isaaclab.sim as sim_utils
         import torch
 
@@ -102,17 +100,9 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
         # calibrated DROID asset (wrist camera mounted frame-for-frame against
         # the source demos) is preserved via a referencing overlay.
         if args_cli.embodiment == "droid_differential_ik":
-            # Teleop embodiment fixes (Arena's DIK cfg is untested for DROID):
-            # - body_name: upstream says "panda_link0" (the ARM BASE -- fixed-base
-            #   jacobian indexing then wraps to the last body; the arm can't servo).
-            #   Control the Robotiq "base_link" instead: same frame the eef_pos/
-            #   eef_quat observations and the scripted expert's IK servo use.
-            # - gripper: Se3Keyboard emits +1 open / -1 close; the ZeroToOne term
-            #   (>0.5 = close) inverts that. Use the stock binary term (<0 = close),
-            #   which matches the keyboard. NOTE: raw DIK gripper actions are thus
-            #   +/-1, not the canonical 0/1 -- the canonical label stream is the
-            #   recorded `abs_joint_action` (see recorders.py), which is derived
-            #   from processed joint targets and convention-independent.
+            # Arena's DIK cfg defaults are wrong for DROID: body_name must be
+            # Robotiq base_link (not panda_link0), and gripper uses stock binary
+            # (<0 = close) so EE-delta tooling matches Se3 devices.
             from isaaclab.envs.mdp.actions.actions_cfg import BinaryJointPositionActionCfg
 
             embodiment.action_config.arm_action.body_name = "base_link"
@@ -165,58 +155,15 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
             func=asset_root_pose, params={"asset_cfg": SceneEntityCfg("held_part")})
         embodiment.observation_config.policy.fixed_part_pose = ObsTerm(
             func=asset_root_pose, params={"asset_cfg": SceneEntityCfg("fixed_part")})
-        # CG-DAgger latch bit (buffer filled by ExpertTakeover wrapper).
-        if getattr(args_cli, "expert_takeover", False):
-            from assembly_bench.environments.assembly.observations import (
-                executed_action,
-                expert_active,
-            )
-
-            embodiment.observation_config.policy.expert_active = ObsTerm(func=expert_active)
-            # Applied command (expert when latched) for HG-DAgger labels.
-            embodiment.observation_config.policy.executed_action = ObsTerm(
-                func=executed_action
-            )
 
         task = NISTAssemblyTask(variant=variant, held=held, fixed=fixed, stand=stand, extras=extras,
                                 reward_mode=getattr(args_cli, "reward", None))
-
-        # Optional teleoperation (demo collection). Only the differential-IK
-        # embodiment can consume SE(3) devices; a keyboard cannot emit absolute
-        # joint targets, so fail loudly instead of moving nothing.
-        teleop_device = None
-        teleop_device_name = getattr(args_cli, "teleop_device", None)
-        if teleop_device_name is not None:
-            if args_cli.embodiment != "droid_differential_ik":
-                raise ValueError(
-                    f"--teleop_device {teleop_device_name} requires --embodiment droid_differential_ik "
-                    f"(got {args_cli.embodiment}): SE(3) teleop devices cannot drive absolute joint-position "
-                    "actions."
-                )
-            # Arena's registry builds the device with a low default sensitivity
-            # (0.05) and ignores teleop.py's --sensitivity flag. Raise it here so
-            # each keypress moves the arm more per step; override per session with
-            # TELEOP_POS_SENS / TELEOP_ROT_SENS. Keep rotation a touch lower than
-            # translation -- roll/pitch/yaw at high gain make fine alignment jumpy.
-            pos_sens = float(os.environ.get("TELEOP_POS_SENS", "0.1"))
-            rot_sens = float(os.environ.get("TELEOP_ROT_SENS", "0.08"))
-            # The streamed viewport looks at the workspace from the operator's
-            # side, mirrored vs. the robot base frame, so W/S, A/D and Q/E all
-            # read backwards. All three translation axes scale by pos_sensitivity,
-            # so negating it flips them together (rotation unaffected). Set
-            # TELEOP_INVERT_XLATE=0 to restore the raw base-frame directions.
-            if os.environ.get("TELEOP_INVERT_XLATE", "1") == "1":
-                pos_sens = -pos_sens
-            teleop_device = self.device_registry.get_device_by_name(teleop_device_name)(
-                pos_sensitivity=pos_sens, rot_sensitivity=rot_sens
-            )
 
         return IsaacLabArenaEnvironment(
             name=self.name,
             embodiment=embodiment,
             scene=scene,
             task=task,
-            teleop_device=teleop_device,
             env_cfg_callback=assembly_bench_env_cfg_callback,
         )
 
@@ -236,15 +183,6 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
         # "none" keeps the env reward-free for eval.
         parser.add_argument("--reward", type=str, default="none",
                             choices=["none", "staged", "potential"])
-        # CG-DAgger: sim-side grasp-fail → peg scripted expert (see expert_takeover.py).
-        parser.add_argument("--expert_takeover", action="store_true",
-                            help="latch grasp-fail and override with the peg scripted expert")
-        # Teleop demo collection (Arena teleop.py / record_demos.py read this).
-        # Requires --embodiment droid_differential_ik; default None keeps eval/
-        # training paths teleop-free (no retargeter exists for abs joint pos).
-        parser.add_argument("--teleop_device", type=str, default=None, choices=["keyboard", "spacemouse"],
-                            help="SE(3) teleop device for demo collection "
-                                 "(requires --embodiment droid_differential_ik)")
 
 
 def make_assembly_env(
@@ -254,20 +192,13 @@ def make_assembly_env(
     hdr: str = "asm_machine_shop",
     light_intensity: float = 1500.0,
     reward: str = "none",
-    expert_takeover: bool = False,
-    takeover_mode: str = "grasp",
 ):
     """Build the assembly Arena gym env for one variant (the Isaac app must be up).
 
-    Shared factory for the HUD server (``env.py``) / ``train.rl`` collect path.
-    ``reward="staged"|"potential"`` turns on dense shaping; "none" (default) keeps
-    the env reward-free for eval. ``expert_takeover`` wraps peg-insert envs so a
-    fail latch (grasp and/or insert, see ``takeover_mode``) overrides policy
-    actions with the scripted expert (HUD video stays continuous). ``num_envs``
-    is the vectorization width.
+    Shared factory for HUD / custom RL loops. ``reward="staged"|"potential"``
+    turns on dense shaping; "none" (default) keeps the env reward-free for eval.
+    ``num_envs`` is the vectorization width.
     """
-    import os
-
     import carb
     from isaaclab_arena.cli.isaaclab_arena_cli import (
         arena_env_builder_cfg_from_argparse,
@@ -280,9 +211,6 @@ def make_assembly_env(
     # so a mid-run rebuild short-circuits instead of erroring.
     carb.settings.get_settings().set_int("/omni/replicator/globalSeed", 42)
 
-    # Mode from arg, else ASSEMBLY_TAKEOVER_MODE (grasp|insert|both).
-    mode = (takeover_mode or os.environ.get("ASSEMBLY_TAKEOVER_MODE", "grasp")).strip().lower()
-
     parser = get_isaaclab_arena_cli_parser()
     AssemblyBenchEnvironment.add_cli_args(parser)
     args, _ = parser.parse_known_args([])
@@ -290,13 +218,6 @@ def make_assembly_env(
     args.light_intensity, args.enable_cameras = light_intensity, True
     args.num_envs = num_envs
     args.reward = reward
-    args.expert_takeover = bool(expert_takeover)
     arena_env = AssemblyBenchEnvironment().get_env(args)
     builder_cfg = arena_env_builder_cfg_from_argparse(args)
-    env = ArenaEnvBuilder(arena_env, builder_cfg).make_registered(render_mode="rgb_array")
-    if expert_takeover:
-        from assembly_bench.environments.assembly.expert_takeover import ExpertTakeover
-
-        env = ExpertTakeover(env, task=task, takeover_mode=mode)
-        print(f"[env] expert_takeover ON for {task} (mode={mode})", flush=True)
-    return env
+    return ArenaEnvBuilder(arena_env, builder_cfg).make_registered(render_mode="rgb_array")

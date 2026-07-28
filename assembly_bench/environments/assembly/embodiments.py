@@ -100,8 +100,8 @@ def apply_assembly_droid_tuning(embodiment: Any) -> None:
     embodiment in place: softened-mimic spawn overlay, solver-iteration
     headroom, a compliant arm, and joint velocity in the policy observation.
 
-    Kept as a module function so any DROID variant (e.g. a teleop embodiment)
-    can opt into the same tuning without duplicating it.
+    Kept as a module function so any DROID variant can opt into the same
+    tuning without duplicating it.
     """
     robot = embodiment.scene_config.robot
 
@@ -121,7 +121,7 @@ def apply_assembly_droid_tuning(embodiment: Any) -> None:
     # Compliant arm for pi0.5 grip ("arm gives, gripper stays"): soft PD so
     # off-center pad contact yields a few mm instead of knocking the peg away.
     # Scripted-expert insert seating needs firmer 150/40 — pass --arm_stiffness
-    # 150 --arm_damping 40 from run_expert / record_rewards_*.sh only.
+    # 150 --arm_damping 40 from run_expert recording runs only.
     for name, vlim, stiff, damp in (
         ("panda_shoulder", 2.175, 100.0, 28.0),  # was 400/80 stock, then 150/40
         ("panda_forearm", 2.61, 50.0, 18.0),     # softer wrist for pad give

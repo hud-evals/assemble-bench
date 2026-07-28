@@ -5,9 +5,9 @@ only the seat geometry differs, carried by the variant. Success
 is the source benchmark's outcome check: the held part's base point reaches
 the seat target (fixed root + family offset, rotated into the fixed frame)
 within the alignment/seat tolerances AND the part is at rest — debounced by
-``hold_success`` (N consecutive true steps). The hard contact skill lives in
-the policy, not the check: a mis-clocked peg, clashing gear, or cross-threaded
-nut cannot descend, so the seat gap stays large.
+``hold_success`` (N consecutive true steps). Nuts also require upright pose,
+no seat overshoot, and enough on-bolt yaw (side-squeeze / forced tip push
+used to false-trigger on xy+depth alone).
 """
 
 import numpy as np
@@ -44,10 +44,57 @@ PAD_FRICTION = 1.3
 PAD_BODIES = ("left_inner_finger", "right_inner_finger")
 # Failure: the held part fell below the tabletop.
 DROP_HEIGHT = TABLE_TOP_Z - 0.05
+# Nut success gates (also authored on nut variants in variants.py).
+NUT_UPRIGHT_COS = 0.9  # ~25° from vertical
+NUT_MIN_THREAD_RAD = 0.3  # min |Δyaw| on the bolt (matches reward THREAD_START)
+
+
+def peg_upright_cos(quat_xyzw: torch.Tensor) -> torch.Tensor:
+    """Cosine of peg/nut tilt from vertical (1 = upright). ``quat`` is xyzw."""
+    qx, qy = quat_xyzw[:, 0], quat_xyzw[:, 1]
+    return 1.0 - 2.0 * (qx * qx + qy * qy)
+
+
+def check_seated(
+    held_pos: torch.Tensor,
+    held_quat_xyzw: torch.Tensor,
+    held_lin_vel: torch.Tensor,
+    target: torch.Tensor,
+    held_base_z_off: float,
+    align_tol: float,
+    seat_tol: float,
+    max_speed: float = 0.05,
+    min_upright_cos: float | None = None,
+    seat_overshoot_tol: float | None = None,
+) -> torch.Tensor:
+    """True when the held base is at the seat target and nearly at rest.
+
+    ``target`` is already in the env frame (fixed root + rotated seat_off).
+    Nuts also pass ``min_upright_cos`` / ``seat_overshoot_tol`` so a tip-over
+    against the shank cannot count as threaded.
+    """
+    aligned = torch.norm(held_pos[:, :2] - target[:, :2], dim=-1) < align_tol
+    seat_gap = (held_pos[:, 2] + held_base_z_off) - target[:, 2]
+    seated = seat_gap < seat_tol
+    if seat_overshoot_tol is not None:
+        # Reject nuts that fell past the seat (beside / through the bolt).
+        seated = seated & (seat_gap > -seat_overshoot_tol)
+    stable = torch.norm(held_lin_vel, dim=-1) < max_speed
+    ok = aligned & seated & stable
+    if min_upright_cos is not None:
+        ok = ok & (peg_upright_cos(held_quat_xyzw) >= min_upright_cos)
+    return ok
+
 
 # ---------------------------------------------------------------------------
 # Success predicate
 # ---------------------------------------------------------------------------
+
+
+def _yaw_z(q: torch.Tensor) -> torch.Tensor:
+    """World-z yaw from xyzw quaternions [N,4]."""
+    x, y, z, w = q.unbind(-1)
+    return torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
 
 
 def part_seated(
@@ -59,6 +106,8 @@ def part_seated(
     align_tol: float,
     seat_tol: float,
     max_speed: float = 0.05,
+    min_upright_cos: float | None = None,
+    seat_overshoot_tol: float | None = None,
 ) -> torch.Tensor:
     """Held base at the seat target (aligned in xy, descended past the seat
     depth) and the part nearly at rest. seat_off is rotated into the fixed
@@ -71,28 +120,75 @@ def part_seated(
 
     off = torch.tensor(seat_off, device=env.device).expand(env.num_envs, 3)
     target = fixed_pos + quat_apply(fixed_quat, off)
-
-    aligned = torch.norm(held_pos[:, :2] - target[:, :2], dim=-1) < align_tol
-    seat_gap = (held_pos[:, 2] + held_base_z_off) - target[:, 2]
-    seated = seat_gap < seat_tol
-    stable = torch.norm(wp.to_torch(held.data.root_lin_vel_w), dim=-1) < max_speed
-    return aligned & seated & stable
+    return check_seated(
+        held_pos,
+        wp.to_torch(held.data.root_quat_w),
+        wp.to_torch(held.data.root_lin_vel_w),
+        target,
+        held_base_z_off,
+        align_tol,
+        seat_tol,
+        max_speed=max_speed,
+        min_upright_cos=min_upright_cos,
+        seat_overshoot_tol=seat_overshoot_tol,
+    )
 
 
 class hold_success(ManagerTermBase):
     """Success wrapper: the raw predicate ``func(env, **params)`` must hold for
-    ``SUCCESS_HOLD_STEPS`` consecutive steps. Class-based so it keeps a per-env
-    streak counter; the TerminationManager resets it for envs that reset."""
+    ``SUCCESS_HOLD_STEPS`` consecutive steps. Optional ``min_thread_rad``
+    (nuts) also requires cumulative |Δyaw| while engaged and upright."""
 
     def __init__(self, cfg: TerminationTermCfg, env: ManagerBasedRLEnv):
         super().__init__(cfg, env)
-        self._streak = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
+        n, dev = env.num_envs, env.device
+        self._streak = torch.zeros(n, dtype=torch.long, device=dev)
+        self._turns = torch.zeros(n, device=dev)
+        self._prev_yaw = torch.zeros(n, device=dev)
+        self._yaw_valid = torch.zeros(n, dtype=torch.bool, device=dev)
 
     def reset(self, env_ids=None) -> None:
-        self._streak[env_ids if env_ids is not None else slice(None)] = 0
+        idx = env_ids if env_ids is not None else slice(None)
+        self._streak[idx] = 0
+        self._turns[idx] = 0.0
+        self._prev_yaw[idx] = 0.0
+        self._yaw_valid[idx] = False
 
-    def __call__(self, env: ManagerBasedRLEnv, func, params: dict) -> torch.Tensor:
-        self._streak = torch.where(func(env, **params), self._streak + 1, 0)
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        func,
+        params: dict,
+        min_thread_rad: float | None = None,
+        engage_gap: float | None = None,
+    ) -> torch.Tensor:
+        ok = func(env, **params)
+        # Nut: accumulate |Δyaw| only while on-bolt and upright (not tip-spin).
+        if min_thread_rad is not None:
+            held = env.scene[params["held_cfg"].name]
+            fixed = env.scene[params["fixed_cfg"].name]
+            origins = env.scene.env_origins
+            held_pos = wp.to_torch(held.data.root_pos_w) - origins
+            fixed_pos = wp.to_torch(fixed.data.root_pos_w) - origins
+            fixed_quat = wp.to_torch(fixed.data.root_quat_w)
+            held_quat = wp.to_torch(held.data.root_quat_w)
+            off = torch.tensor(params["seat_off"], device=env.device).expand(env.num_envs, 3)
+            target = fixed_pos + quat_apply(fixed_quat, off)
+            xy = torch.norm(held_pos[:, :2] - target[:, :2], dim=-1)
+            gap = (held_pos[:, 2] + params["held_base_z_off"]) - target[:, 2]
+            upright = peg_upright_cos(held_quat) >= (
+                params["min_upright_cos"]
+                if params.get("min_upright_cos") is not None
+                else NUT_UPRIGHT_COS)
+            engaged = (xy < params["align_tol"]) & (gap < float(engage_gap)) & upright
+            yaw = _yaw_z(held_quat)
+            delta = (yaw - self._prev_yaw + torch.pi) % (2.0 * torch.pi) - torch.pi
+            self._turns = self._turns + torch.where(
+                engaged & self._yaw_valid, delta.abs(), torch.zeros_like(delta))
+            self._prev_yaw = yaw
+            self._yaw_valid = self._yaw_valid | engaged
+            ok = ok & (self._turns >= min_thread_rad)
+        self._streak = torch.where(ok, self._streak + 1, 0)
         return self._streak >= SUCCESS_HOLD_STEPS
 
 
@@ -142,22 +238,15 @@ def reset_assembly_workspace(
 
 
 def settle_and_render(env, env_ids, steps: int = 120, rt_subframes: int = 32) -> None:
-    """Post-reset warmup: settle the freshly jittered parts into contact, push
-    the teleported transforms through fabric to the renderer (IsaacLab's
-    reset() alone returns camera obs of the PREVIOUS state, see
-    notes/ISSUE_stale_reset_camera_obs.md), then flush the RTX temporal state
-    (DLAA history) with a Replicator-style subframe pump -- the step-loop's
-    one-render-per-step did NOT clear teleport ghosts (near-solid ghosts of
-    pre-reset poses survived 120 warmup frames and faded over ~300 recorded
-    frames). ``rep.orchestrator.step(rt_subframes=N)`` is NVIDIA's documented
-    flush for exactly this (SDG pipelines teleporting assets): it pauses the
-    timeline and re-renders the SAME frame N times across all render products.
-    Steps the whole sim, so it assumes benchmark-style global resets.
+    """Post-reset warmup: settle parts, push fabric transforms to the renderer,
+    then flush RTX temporal state (DLAA) via ``rep.orchestrator.step``.
 
-    The raw ``sim.step`` bypasses the manager's ``write_data_to_sim``, so the
-    home joint-position TARGET staged by ``reset_scene_to_default`` never
-    reaches PhysX -- the arm teleports home but the stale prior-episode target
-    drags it back off during settle. Re-flush each step so the PD holds home."""
+    IsaacLab ``reset()`` alone can return camera obs of the previous state;
+    one-render-per-step does not clear teleport ghosts. Replicator's subframe
+    pump re-renders the same frame N times across all render products.
+
+    Raw ``sim.step`` bypasses ``write_data_to_sim``, so re-flush the home joint
+    target each settle step or the arm drifts off during warmup."""
     # Native 1280x720 dual-camera renders are intentionally expensive. Keep the
     # production defaults above, but let expert-development runs shorten this
     # reset-only anti-ghosting pass without changing task configuration.
@@ -299,10 +388,16 @@ class NISTAssemblyTask(TaskBase):
                 "held_base_z_off": v.held_base_z_off,
                 "align_tol": v.align_tol,
                 "seat_tol": v.seat_tol,
+                "min_upright_cos": v.min_upright_cos,
+                "seat_overshoot_tol": v.seat_overshoot_tol,
             },
         )
+        hold_params = {"func": raw.func, "params": raw.params}
+        if v.min_thread_rad is not None:
+            hold_params["min_thread_rad"] = v.min_thread_rad
+            hold_params["engage_gap"] = v.engage_gap
         return AssemblyTerminationsCfg(
-            success=TerminationTermCfg(func=hold_success, params={"func": raw.func, "params": raw.params}),
+            success=TerminationTermCfg(func=hold_success, params=hold_params),
             part_dropped=TerminationTermCfg(
                 func=mdp_isaac_lab.root_height_below_minimum,
                 params={"minimum_height": DROP_HEIGHT, "asset_cfg": SceneEntityCfg(self.held.name)},

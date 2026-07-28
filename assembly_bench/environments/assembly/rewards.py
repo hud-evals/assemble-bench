@@ -25,7 +25,7 @@ from isaaclab.managers import ManagerTermBase, RewardTermCfg, SceneEntityCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.math import quat_apply
 
-from assembly_bench.environments.assembly.tasks import part_seated
+from assembly_bench.environments.assembly.tasks import part_seated, peg_upright_cos
 from assembly_bench.environments.assembly.variants import TABLE_TOP_Z, AssemblyVariant
 
 # Once-fired milestones.
@@ -115,11 +115,15 @@ class staged_assembly_reward(ManagerTermBase):
         stand_z: float,
         ee_body: str,
         family: str = "peg_insert",
+        min_upright_cos: float | None = None,
+        seat_overshoot_tol: float | None = None,
+        min_thread_rad: float | None = None,
     ) -> torch.Tensor:
         held = env.scene[held_cfg.name]
         robot = env.scene[robot_cfg.name]
         origins = env.scene.env_origins
         held_pos = wp.to_torch(held.data.root_pos_w) - origins
+        held_quat = wp.to_torch(held.data.root_quat_w)
         held_z = held_pos[:, 2]
         xy, gap = _align_and_gap(env, held_cfg, fixed_cfg, seat_off, held_base_z_off)
 
@@ -134,15 +138,22 @@ class staged_assembly_reward(ManagerTermBase):
         phi_depth = torch.clamp(1.0 - gap / partial_socket_h, 0.0, 1.0)
 
         lifted = (held_z - stand_z) > lift_clear
-        engaged = (xy < align_tol) & (gap < engage_gap)
-        success = part_seated(env, held_cfg, fixed_cfg, seat_off, held_base_z_off,
-                              align_tol, seat_tol)
+        # Nuts: engage/thread only while upright (no credit for tip-spin beside bolt).
+        upright = (
+            peg_upright_cos(held_quat) >= min_upright_cos
+            if min_upright_cos is not None
+            else torch.ones(env.num_envs, dtype=torch.bool, device=env.device)
+        )
+        engaged = (xy < align_tol) & (gap < engage_gap) & upright
+        success = part_seated(
+            env, held_cfg, fixed_cfg, seat_off, held_base_z_off, align_tol, seat_tol,
+            min_upright_cos=min_upright_cos, seat_overshoot_tol=seat_overshoot_tol)
 
         # Nut: accumulate |Δyaw| while engaged -> Φ_thread + first-turn milestone.
         is_nut = family == "nut_thread"
         thread_start = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
         if is_nut:
-            yaw = _yaw_z(wp.to_torch(held.data.root_quat_w))
+            yaw = _yaw_z(held_quat)
             delta = (yaw - self._prev_yaw + torch.pi) % (2.0 * torch.pi) - torch.pi
             self._turns = self._turns + torch.where(
                 engaged & self._yaw_valid, delta.abs(), torch.zeros_like(delta))
@@ -150,6 +161,9 @@ class staged_assembly_reward(ManagerTermBase):
             self._yaw_valid = self._yaw_valid | engaged
             thread_start = self._turns > THREAD_START_RAD
             phi_thread = torch.clamp(self._turns / THREAD_TARGET_RAD, 0.0, 1.0)
+            # Same on-bolt turn floor as the success termination.
+            if min_thread_rad is not None:
+                success = success & (self._turns >= min_thread_rad)
         else:
             phi_thread = torch.zeros(env.num_envs, device=env.device)
 
@@ -253,11 +267,15 @@ class potential_assembly_reward(ManagerTermBase):
         stand_z: float,
         ee_body: str,
         family: str = "peg_insert",
+        min_upright_cos: float | None = None,
+        seat_overshoot_tol: float | None = None,
+        min_thread_rad: float | None = None,
     ) -> torch.Tensor:
         held = env.scene[held_cfg.name]
         robot = env.scene[robot_cfg.name]
         origins = env.scene.env_origins
         held_pos = wp.to_torch(held.data.root_pos_w) - origins
+        held_quat = wp.to_torch(held.data.root_quat_w)
         held_z = held_pos[:, 2]
         xy, gap = _align_and_gap(env, held_cfg, fixed_cfg, seat_off, held_base_z_off)
 
@@ -270,14 +288,20 @@ class potential_assembly_reward(ManagerTermBase):
         phi_depth = torch.clamp(1.0 - gap / partial_socket_h, 0.0, 1.0)
 
         lifted = (held_z - stand_z) > lift_clear
-        engaged = (xy < align_tol) & (gap < engage_gap)
-        success = part_seated(env, held_cfg, fixed_cfg, seat_off, held_base_z_off,
-                              align_tol, seat_tol)
+        upright = (
+            peg_upright_cos(held_quat) >= min_upright_cos
+            if min_upright_cos is not None
+            else torch.ones(env.num_envs, dtype=torch.bool, device=env.device)
+        )
+        engaged = (xy < align_tol) & (gap < engage_gap) & upright
+        success = part_seated(
+            env, held_cfg, fixed_cfg, seat_off, held_base_z_off, align_tol, seat_tol,
+            min_upright_cos=min_upright_cos, seat_overshoot_tol=seat_overshoot_tol)
 
         is_nut = family == "nut_thread"
         thread_start = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
         if is_nut:
-            yaw = _yaw_z(wp.to_torch(held.data.root_quat_w))
+            yaw = _yaw_z(held_quat)
             delta = (yaw - self._prev_yaw + torch.pi) % (2.0 * torch.pi) - torch.pi
             self._turns = self._turns + torch.where(
                 engaged & self._yaw_valid, delta.abs(), torch.zeros_like(delta))
@@ -285,6 +309,8 @@ class potential_assembly_reward(ManagerTermBase):
             self._yaw_valid = self._yaw_valid | engaged
             thread_start = self._turns > THREAD_START_RAD
             phi_thread = torch.clamp(self._turns / THREAD_TARGET_RAD, 0.0, 1.0)
+            if min_thread_rad is not None:
+                success = success & (self._turns >= min_thread_rad)
         else:
             phi_thread = torch.zeros(env.num_envs, device=env.device)
 
@@ -364,6 +390,9 @@ def build_rewards_cfg(variant: AssemblyVariant, held, fixed, robot_name: str = "
         "stand_z": TABLE_TOP_Z,
         "ee_body": ee_body,
         "family": variant.family,
+        "min_upright_cos": variant.min_upright_cos,
+        "seat_overshoot_tol": variant.seat_overshoot_tol,
+        "min_thread_rad": variant.min_thread_rad,
     }
     if mode == "potential":
         return AssemblyRewardsCfg(potential=RewardTermCfg(

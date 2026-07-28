@@ -17,10 +17,14 @@ Geometry (authored parts): pegs are 50 mm long, bores 25 mm deep with a ~1 mm
 chamfer mouth; the presentation stand is a second bore, so the exposed shaft
 is ~25 mm. Success = peg base at the hole root within 2.5 mm xy / 3 mm seat.
 
-Tip recovery (near the hole): keep the grip. A tilted peg's tip is NOT the
-centering signal — always put the peg **base** on the hole first (tiny lift if
-jammed on the lip), then fold the tip in (small wrist + tip nudge), then press.
-No park swings or drop/regrasp for tip.
+Near the hole: keep grip CLOSED, freeze wrist. XY is dual and height must NOT
+override it: if the peg **base** is off the hole, servo base→hole; once the
+base is on (or already in the bore), servo **tip→hole** (tip = base + 50 mm
+along quat). A centered base with a leaning tip still jams — tip-led XY stands
+the shaft up (and holds Z while tip is far). Never open early.
+
+Post-release stuck: if open still leaves the peg proud on the seat, one
+top-regrasp nudge toward the bore then re-press/release.
 """
 
 import torch
@@ -59,7 +63,7 @@ BORE_H = 0.025
 GRASP_BELOW_TOP = 0.025
 SAFE_BASE_Z = 0.075         # peg base clears the 25 mm bosses with margin
 ALIGN_MARGIN = 0.006        # peg base above the bore mouth while aligning
-SEAT_OVERSHOOT = 0.002
+SEAT_OVERSHOOT = 0.004  # press a few mm past seat root so pads don't leave it proud
 
 # Yaw clocking (rectangular pegs). CLOCK_RATE caps the per-step wrist roll so it
 # never runs ahead of what the servo's rot_cap can actually track (no windup);
@@ -80,6 +84,14 @@ PRESS_UPRIGHT = 0.978    # cos(12°): abort press only past this
 BASE_READY_XY = 0.0015   # 1.5 mm — base on bore before tip/wrist fold
 # Release only inside this xy — opening off-center dumps the peg (bad demo).
 RELEASE_XY = 0.0012
+INSERT_ON_BORE_XY = 0.0015  # base on bore; also tip-led threshold
+STUCK_STEPS = 8
+STUCK_EPS = 0.00025
+XY_CLAMP = 0.006            # base-led live target band
+TIP_CLAMP = 0.018           # tip-led needs room for ~13 mm tip lean
+TIP_HARD_XY = 0.003         # tip this far → hard tip→hole every step
+MOUTH_GAP = 0.012           # still on chamfer / not in bore
+SERVO_TIP_GAIN = 0.85       # tip-led needs a firmer shove than base soft
 
 
 # Binary gripper, the CANONICAL DROID/openpi/RoboLab convention (finger_joint
@@ -105,12 +117,16 @@ def make_machine(base, servo, grasp_below_top=None, aim_off=None, seed=None, clo
     orientation is byte-identical to the round path.
     """
     N, dev = base.num_envs, base.device
+    # Insert: base-led on mouth; tip-led once bottom is in / on-bore.
+    best_gap = torch.full((N,), float("inf"), device=dev)
+    stuck_ticks = torch.zeros(N, dtype=torch.long, device=dev)
     # The DROID home already points the tool straight down, so we HOLD the home
     # orientation for the whole trajectory and grasp by pure translation.
     hold_quat = home_quat(servo)
     grasp_anchor = torch.zeros((N, 3), device=dev)
     lift_anchor = torch.zeros((N, 3), device=dev)
-    inhand = torch.zeros((N, 3), device=dev)   # peg base offset in EE frame, set at insert entry
+    # One-shot post-release nudge (proud peg that didn't drop into the bore).
+    nudge_used = torch.zeros(N, dtype=torch.bool, device=dev)
     grasp_depth = (grasp_below_top if grasp_below_top is not None
                    else torch.full((N,), GRASP_BELOW_TOP, device=dev))
 
@@ -201,7 +217,7 @@ def make_machine(base, servo, grasp_below_top=None, aim_off=None, seed=None, clo
         return torch.norm(wp.to_torch(base.scene["held_part"].data.root_lin_vel_w), dim=-1)
 
     def _goto_straighten(m, mask):
-        """Jump tipped align/insert slots to tip→hole nudge (keep grip)."""
+        """Jump tipped align slots to translation-only tip→hole recenter."""
         if not bool(mask.any()):
             return
         ids = mask.nonzero(as_tuple=False).squeeze(-1)
@@ -275,83 +291,125 @@ def make_machine(base, servo, grasp_below_top=None, aim_off=None, seed=None, clo
         t[:, 2] = ee[:, 2] + (safe_base_z - peg()[:, 2])
         return t, qhold(), CLOSE
 
+    def enter_align(m, ids):
+        # Freeze wrist as-is — never rotate near the hole.
+        hold_quat[ids] = m.servo.ee_quat()[ids]
+
+    def tip_led_mask(peg_p, hole_p, gap):
+        # Tip owns XY once the base is on OR already below the mouth — never
+        # gated on "at mouth" height (that was the bug: ignored 13 mm tip lean).
+        base_ok = xy_err(peg_p, hole_p) < INSERT_ON_BORE_XY
+        in_bore = gap < MOUTH_GAP
+        return base_ok | in_bore
+
+    def xy_dual_target(ee_xy, peg_p, hole_p, tip_p, tip_led, *, use_hard):
+        """EE XY: base→hole or tip→hole; hard maps the active point onto hole."""
+        base_err = hole_p[:, :2] - peg_p[:, :2]
+        tip_err = hole_p[:, :2] - tip_p[:, :2]
+        err = torch.where(tip_led.unsqueeze(-1), tip_err, base_err)
+        gain = torch.where(tip_led, SERVO_TIP_GAIN, SERVO_XY_GAIN)
+        soft = ee_xy + gain.unsqueeze(-1) * err
+        hard_pt = torch.where(tip_led.unsqueeze(-1), tip_p[:, :2], peg_p[:, :2])
+        hard = hole_p[:, :2] + (ee_xy - hard_pt)
+        xy = torch.where(use_hard.unsqueeze(-1), hard, soft)
+        clamp = torch.where(tip_led, TIP_CLAMP, XY_CLAMP)
+        return (torch.max(torch.min(xy, hole_p[:, :2] + clamp.unsqueeze(-1)),
+                          hole_p[:, :2] - clamp.unsqueeze(-1)),
+                tip_err)
+
     def t_align(m):
-        # ONE continuous target: soft xy servo onto the bore at just-above-mouth
-        # height. No engage/park mode switches — boundary flips read as jitter.
-        # The press itself belongs to insert.
-        _goto_straighten(m, peg_needs_correct() & (m.phase == name2idx.get("align", -1)))
+        # Dual XY + ease to mouth. Wrist frozen.
         clock_step("align", m)
-        ee = m.servo.ee()
-        err = hole() - peg()
+        ee, peg_p, hole_p = m.servo.ee(), peg(), hole()
+        tip_p = peg_tip()
+        gap = peg_p[:, 2] - hole_p[:, 2]
+        tip_led = tip_led_mask(peg_p, hole_p, gap)
+        tip_far = tip_led & (xy_err(tip_p, hole_p) > TIP_HARD_XY)
+        xy, _ = xy_dual_target(
+            ee[:, :2], peg_p, hole_p, tip_p, tip_led, use_hard=tip_far)
         t = ee.clone()
-        t[:, :2] = ee[:, :2] + SERVO_XY_GAIN * err[:, :2]
-        t[:, 2] = ee[:, 2] + (hole()[:, 2] + BORE_H + ALIGN_MARGIN - peg()[:, 2])
-        return t, qhold(), CLOSE
+        t[:, :2] = xy
+        # Hold Z while standing the tip up; else ease to mouth.
+        ease_z = ee[:, 2] + (hole_p[:, 2] + BORE_H + ALIGN_MARGIN - peg_p[:, 2]).clamp(max=0.0)
+        t[:, 2] = torch.where(tip_far, ee[:, 2], ease_z)
+        return t, hold_quat, CLOSE
 
     def enter_insert(m, ids):
-        # Capture the in-hand transform (peg base in the EE frame) right before
-        # contact -- align has just put the live peg on the bore xy, so this is
-        # accurate AND includes any in-grip tilt. Orientation is held constant,
-        # so the world-axis offset stays valid through the press.
-        inhand[ids] = peg()[ids] - m.servo.ee()[ids]
+        hold_quat[ids] = m.servo.ee_quat()[ids]
+        best_gap[ids] = float("inf")
+        stuck_ticks[ids] = 0
+        peg_p, hole_p, tip_p = peg()[ids], hole()[ids], peg_tip()[ids]
+        xy = torch.norm(peg_p[:, :2] - hole_p[:, :2], dim=-1)
+        tip_xy = torch.norm(tip_p[:, :2] - hole_p[:, :2], dim=-1)
+        gap = peg_p[:, 2] - hole_p[:, 2]
+        print(f"[insert] enter ids={ids.tolist()} base_xy_mm={(xy*1e3).tolist()} "
+              f"tip_xy_mm={(tip_xy*1e3).tolist()} tip_dx_mm={((tip_p[:,0]-hole_p[:,0])*1e3).tolist()} "
+              f"gap_mm={(gap*1e3).tolist()} tip_led={tip_led_mask(peg_p, hole_p, gap).tolist()} "
+              f"up={peg_upright()[ids].tolist()}", flush=True)
 
     def t_insert(m):
-        # Steady press: blend xy onto the bore anchor and drive z to the seat.
-        # No probes. When still off-center, favor recentering over ramming the lip.
-        _goto_straighten(
-            m, peg_too_tipped_to_press() & (m.phase == name2idx.get("insert", -1)))
-        clock_step("insert", m)
-        ee = m.servo.ee()
-        peg_p, hole_p = peg(), hole()
-        t = hole_p - inhand
-        t[:, :2] = ee[:, :2] + SERVO_XY_GAIN * (t[:, :2] - ee[:, :2])
-        xy = xy_err(peg_p, hole_p)
-        on_bore = xy < 0.002
-        # Pause z only on a real off-bore slip, or while still clearly off-center
-        # (pressing the lip teaches jam-then-drop, not insertion).
-        slip = torch.norm(peg_p - (ee + inhand), dim=-1) > 0.015
-        dz = hole_p[:, 2] - SEAT_OVERSHOOT - peg_p[:, 2]
-        freeze_z = (slip & ~on_bore) | (xy > 0.0025)
-        t[:, 2] = ee[:, 2] + torch.where(freeze_z, torch.zeros_like(dz), dz)
-        return t, qhold(), CLOSE
+        # Dual XY (tip once base on — height never overrides). Hold Z while tip
+        # is far; else press. Stuck / tip-far → hard map of the active point.
+        ee, peg_p, hole_p = m.servo.ee(), peg(), hole()
+        tip_p = peg_tip()
+        gap = peg_p[:, 2] - hole_p[:, 2]
+        tip_led = tip_led_mask(peg_p, hole_p, gap)
+        tip_xy = xy_err(tip_p, hole_p)
+        tip_far = tip_led & (tip_xy > TIP_HARD_XY)
+
+        improved = gap < (best_gap - STUCK_EPS)
+        reject = gap > (best_gap + 0.001)
+        best_gap[:] = torch.minimum(best_gap, gap)
+        stuck_ticks[:] = torch.where(
+            improved & ~tip_far, torch.zeros_like(stuck_ticks), stuck_ticks + 1)
+        stuck = (stuck_ticks >= STUCK_STEPS) | reject
+        stuck_ticks[:] = torch.where(stuck, torch.zeros_like(stuck_ticks), stuck_ticks)
+
+        if int(m.timer.max().item()) % 60 == 0 and int(m.timer.max().item()) > 0:
+            base_xy = xy_err(peg_p, hole_p)
+            print(f"[insert] t={int(m.timer.max().item())} "
+                  f"base_xy_mm={(base_xy*1e3).tolist()} "
+                  f"tip_xy_mm={(tip_xy*1e3).tolist()} "
+                  f"tip_dx_mm={((tip_p[:, 0] - hole_p[:, 0]) * 1e3).tolist()} "
+                  f"gap_mm={(gap*1e3).tolist()} tip_led={tip_led.tolist()} "
+                  f"up={peg_upright().tolist()}", flush=True)
+
+        # Base still off → hard base when stuck; tip-led → hard tip whenever tip_far.
+        use_hard = stuck | tip_far | (~tip_led & (xy_err(peg_p, hole_p) > 0.0008))
+        xy, _ = xy_dual_target(
+            ee[:, :2], peg_p, hole_p, tip_p, tip_led, use_hard=use_hard)
+        t = ee.clone()
+        t[:, :2] = xy
+        press_z = ee[:, 2] + (hole_p[:, 2] - SEAT_OVERSHOOT - peg_p[:, 2]).clamp(max=0.0)
+        # Don't ram the rim while the tip is still leaning.
+        t[:, 2] = torch.where(tip_far, ee[:, 2], press_z)
+        return t, hold_quat, CLOSE
 
     def enter_straighten(m, ids):
-        # Correct from the grasp tool-down pose (never a previously snapped wrist).
-        hold_quat[ids] = home_hold[ids]
+        hold_quat[ids] = m.servo.ee_quat()[ids]
 
     def t_straighten(m):
-        # Tilt recovery, smooth and base-first: soft-servo the BASE onto the bore
-        # at mouth height; once it's on, blend in the tip and stand the wrist up
-        # (rate-limited, no-op when already upright). Insert does the press.
-        ee, peg_p, hole_p, tip_p = m.servo.ee(), peg(), hole(), peg_tip()
-        base_off = hole_p[:, :2] - peg_p[:, :2]
-        tip_off = hole_p[:, :2] - tip_p[:, :2]
-        base_ready = xy_err(peg_p, hole_p) < BASE_READY_XY
-        xy_cmd = SERVO_XY_GAIN * torch.where(
-            base_ready.unsqueeze(-1),
-            0.5 * base_off + 0.5 * tip_off,
-            base_off,
-        )
+        # Same dual XY as align.
+        ee, peg_p, hole_p = m.servo.ee(), peg(), hole()
+        tip_p = peg_tip()
+        gap = peg_p[:, 2] - hole_p[:, 2]
+        tip_led = tip_led_mask(peg_p, hole_p, gap)
+        tip_far = tip_led & (xy_err(tip_p, hole_p) > TIP_HARD_XY)
+        xy, _ = xy_dual_target(
+            ee[:, :2], peg_p, hole_p, tip_p, tip_led, use_hard=tip_far)
         t = ee.clone()
-        t[:, :2] = ee[:, :2] + xy_cmd
-        t[:, 2] = ee[:, 2] + (hole_p[:, 2] + BORE_H + ALIGN_MARGIN - peg_p[:, 2])
-        # Wrist upright once base is on the bore — folds the tip over the hole.
-        q_tgt = qhold()
-        if bool(base_ready.any()):
-            world_z = peg_p.new_tensor([0.0, 0.0, 1.0]).expand(N, 3)
-            q_up = quat_mul(quat_align_vectors(peg_axis(), world_z), m.servo.ee_quat())
-            q_tgt = torch.where(base_ready.unsqueeze(-1), q_up, q_tgt)
-        return t, q_tgt, CLOSE
+        t[:, :2] = xy
+        ease_z = ee[:, 2] + (hole_p[:, 2] + BORE_H + ALIGN_MARGIN - peg_p[:, 2]).clamp(max=0.0)
+        t[:, 2] = torch.where(tip_far, ee[:, 2], ease_z)
+        return t, hold_quat, CLOSE
 
     def enter_straighten_done(m, ids):
-        # Freeze whatever upright wrist we reached, then press.
         hold_quat[ids] = m.servo.ee_quat()[ids]
         m.goto(ids, name2idx["insert"])
 
     def t_release(m):
-        # Press done: open the gripper in place so the peg drops/settles into the
-        # bore under gravity. A peg pressed to partial depth but held by the pads
-        # never satisfies the seat check (it hangs proud); releasing lets it seat.
+        # Peg already at/near seat under a closed grip — open in place so the
+        # success check sees a freed, seated peg (not a mid-press drop).
         return m.servo.ee(), qhold(), OPEN
 
     def t_hold(m):
@@ -363,6 +421,37 @@ def make_machine(base, servo, grasp_below_top=None, aim_off=None, seed=None, clo
         # Insert/align bail sink: keep pinching. Opening off-bore dumps the peg
         # and poisons DAgger with a drop-beside-hole demo.
         return m.servo.ee(), qhold(), CLOSE
+
+    def nudge_top_tcp():
+        # Pinch near the tip of a proud-on-seat peg (live pose, not stand rest).
+        p = peg().clone()
+        p[:, 2] += PEG_LEN - 0.008
+        return p
+
+    def t_nudge_approach(m):
+        t = nudge_top_tcp()
+        t[:, 2] += 0.025
+        return toward(t, m), qhold(), OPEN
+
+    def t_nudge_descend(m):
+        return toward(nudge_top_tcp(), m), qhold(), OPEN
+
+    def enter_nudge_grasp(m, ids):
+        grasp_anchor[ids] = m.servo.ee()[ids]
+
+    def t_nudge_grasp(m):
+        return grasp_anchor, qhold(), CLOSE
+
+    def t_nudge_shift(m):
+        # Free the jam a few mm, soft-servo XY onto the bore, then re-press.
+        ee, peg_p, hole_p = m.servo.ee(), peg(), hole()
+        t = ee.clone()
+        t[:, :2] = ee[:, :2] + SERVO_XY_GAIN * (hole_p[:, :2] - peg_p[:, :2])
+        t[:, 2] = ee[:, 2] + 0.008
+        return t, qhold(), CLOSE
+
+    def enter_nudge_to_insert(m, ids):
+        m.goto(ids, name2idx["insert"])
 
     # --- phase completion (full batch bool) ---------------------------------
     # Via-point tolerances stay LOOSE (the IK+PD chain has a few-mm steady-state
@@ -399,8 +488,8 @@ def make_machine(base, servo, grasp_below_top=None, aim_off=None, seed=None, clo
         return near(t_lift)(m) & (peg()[:, 2] > 0.03) & (peg_upright() > 0.95)
 
     def aligned(m):
-        # Tight enough that insert presses into the bore, not the lip.
-        ok = (xy_err(peg(), hole()) < RELEASE_XY) & (~peg_too_tipped_to_press())
+        # Peg base roughly on the bore — then keep holding and press.
+        ok = xy_err(peg(), hole()) < INSERT_ON_BORE_XY
         if clock:
             ok = ok & (yaw_err().abs() < YAW_TOL)
         return ok
@@ -410,35 +499,47 @@ def make_machine(base, servo, grasp_below_top=None, aim_off=None, seed=None, clo
         return (xy_err(peg(), hole()) < 0.002) & (gap < 0.003)
 
     def insert_done(m):
-        # Release only when ON-BORE. Prefer a real seat; if pads hit the face
-        # (~20 mm proud) after a short firm press, open so the peg drops in —
-        # never idle-crawl for 90 ticks, never open while off-center.
+        # Keep grip closed until truly near the seat. Opening while still ~6 mm
+        # proud looked "in the hole" but never finished the press.
         gap = peg()[:, 2] - hole()[:, 2]
         well = xy_err(peg(), hole()) < RELEASE_XY
-        deep = gap < 0.010
-        # Fingers often bottom on the socket before the peg seats; drop-in is OK
-        # once centered and we've actually tried to press for a bit.
-        lip_drop = (gap < 0.022) & (m.timer > 28)
-        return well & (seated(m) | deep | lip_drop)
+        return well & (gap < 0.003) & (m.timer > 20)
 
     def released(m):
-        # Peg has dropped/settled into the bore (brief settle, don't idle).
-        return (m.timer >= 6) | (peg_speed() < 0.005)
+        # Brief open dwell so drop-in (or stuck-proud) can be observed.
+        return m.timer >= 12
+
+    def peg_stuck_proud():
+        # Open left the peg near the seat but still proud — didn't fall in.
+        gap = peg()[:, 2] - hole()[:, 2]
+        xy = xy_err(peg(), hole())
+        return (xy < 0.015) & (gap > 0.008) & (gap < 0.040) & (peg_speed() < 0.01)
 
     def straighten_ok(m):
-        # Base on bore → hand to insert promptly; don't wait out tip perfection.
-        base_ok = xy_err(peg(), hole()) < BASE_READY_XY
-        tip_ok = xy_err(peg_tip(), hole()) < 0.004
-        good = base_ok & tip_ok & (m.timer >= 4)
-        mild = base_ok & (~peg_too_tipped_to_press()) & (m.timer >= 12)
-        return good | mild | (base_ok & (m.timer >= 30))
+        return (xy_err(peg(), hole()) < INSERT_ON_BORE_XY) & (m.timer >= 4)
+
+    def nudge_grasped(m):
+        return (m.timer >= 10) & (peg_speed() < 0.008)
+
+    def nudge_shift_ok(m):
+        return (xy_err(peg(), hole()) < 0.002) | (m.timer > 30)
 
     never = lambda m: torch.zeros(N, dtype=torch.bool, device=dev)
 
     def enter_to_hold(m, ids):
-        # Sequential advance from release must NOT fall into the straighten
-        # branch below (it would re-close on the freed peg) — jump to hold.
-        m.goto(ids, name2idx["hold"])
+        # After release: if peg is still proud on the seat, one top-regrasp
+        # nudge toward the bore then re-insert. Else park open. Skip straighten
+        # (sequential neighbor) — never re-close on a freed seated peg.
+        stuck = peg_stuck_proud()
+        can = stuck & ~nudge_used
+        to_nudge = ids[can[ids]]
+        to_park = ids[~can[ids]]
+        if to_nudge.numel():
+            nudge_used[to_nudge] = True
+            hold_quat[to_nudge] = home_hold[to_nudge]
+            m.goto(to_nudge, name2idx["nudge_approach"])
+        if to_park.numel():
+            m.goto(to_park, name2idx["hold"])
 
     machine = Machine(base, servo, [
         # Generous timeouts: the PD arm tracks the IK targets slower than the
@@ -455,22 +556,34 @@ def make_machine(base, servo, grasp_below_top=None, aim_off=None, seed=None, clo
         # Slow carry / align / press: lower caps + soft xy gain → smooth demos.
         Phase("transport", t_transport, lambda m: xy_err(peg(), hole()) < 0.002,
               timeout=220, pos_cap=0.006, zcap=0.15, rot_cap=0.06),
-        # Align = smooth centering just above the mouth; timeout still advances
-        # (insert refuses to press/release while off-center).
-        Phase("align", t_align, aligned, timeout=70,
-              pos_cap=0.004, zcap=0.3, rot_cap=0.05, fail_on_timeout=False),
-        # Firm press once on-bore: ~1.6 mm/tick (zcap*pos_cap) — decisive, smooth.
-        Phase("insert", t_insert, insert_done, timeout=120,
-              pos_cap=0.004, zcap=0.4, rot_cap=0.04, on_enter=enter_insert),
+        # Align until on-bore — timeout handoff at ~2 mm pins the lip.
+        Phase("align", t_align, aligned, timeout=10**9,
+              pos_cap=0.005, zcap=0.4, rot_cap=0.05, on_enter=enter_align,
+              fail_on_timeout=False),
+        # Tip-led XY needs a bit more lateral rate to unwind ~13 mm tip lean.
+        Phase("insert", t_insert, insert_done, timeout=450,
+              pos_cap=0.008, zcap=1.0, rot_cap=0.04, on_enter=enter_insert,
+              fail_on_timeout=False),
         Phase("release", t_release, released, timeout=20, fail_on_timeout=False),
-        # Park: reroute release's sequential advance past the recovery branch.
         Phase("to_hold", t_hold, never, timeout=10**9, on_enter=enter_to_hold),
-        # Tip recovery (goto entry): base-first center → tip fold → insert.
-        Phase("straighten", t_straighten, straighten_ok, timeout=60,
-              pos_cap=0.004, zcap=0.15, rot_cap=0.04, on_enter=enter_straighten,
+        Phase("straighten", t_straighten, straighten_ok, timeout=90,
+              pos_cap=0.005, zcap=0.4, rot_cap=0.04, on_enter=enter_straighten,
               fail_on_timeout=False),
         Phase("straighten_done", t_straighten, never, timeout=10**9,
               on_enter=enter_straighten_done),
+        # Post-release stuck: top-regrasp → XY nudge to bore → insert again.
+        Phase("nudge_approach", t_nudge_approach,
+              near(t_nudge_approach, 0.012, need_upright=True), timeout=60,
+              pos_cap=0.005, zcap=0.3, rot_cap=0.06),
+        Phase("nudge_descend", t_nudge_descend,
+              near(t_nudge_descend, 0.008, z_tol=0.003), timeout=60,
+              gate=0.005, zcap=0.4, pos_cap=0.004),
+        Phase("nudge_grasp", t_nudge_grasp, nudge_grasped, timeout=30,
+              fail_on_timeout=False, on_enter=enter_nudge_grasp),
+        Phase("nudge_shift", t_nudge_shift, nudge_shift_ok, timeout=40,
+              pos_cap=0.003, zcap=0.2, rot_cap=0.04, fail_on_timeout=False),
+        Phase("nudge_to_insert", t_nudge_shift, never, timeout=10**9,
+              on_enter=enter_nudge_to_insert),
         # Success park (open). Machine bail jumps to LAST — keep that closed.
         Phase("hold", t_hold, never, timeout=10**9),
         Phase("fail_closed", t_fail_closed, never, timeout=10**9),

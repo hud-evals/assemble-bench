@@ -9,6 +9,8 @@ Two thresholds:
 
 Never uses stand ``lift_clear`` (mouth height sits below that threshold).
 Expert handoff regrasps from hover. Complements grasp/insert gates.
+
+Upright geometry lives in ``tasks.peg_upright_cos`` (shared with success).
 """
 
 from __future__ import annotations
@@ -16,6 +18,8 @@ from __future__ import annotations
 import math
 
 import torch
+
+from assembly_bench.environments.assembly.tasks import peg_upright_cos
 
 TILT_DEG = 30.0
 TILT_DEG_INSERT = 12.0
@@ -26,12 +30,6 @@ STALL_STEPS = 3
 # Don't steal a nearly-seated upright peg.
 SEATED_XY = 0.01
 SEATED_GAP = 0.015
-
-
-def peg_upright_cos(quat_xyzw: torch.Tensor) -> torch.Tensor:
-    """Cosine of peg tilt from vertical (1 = upright). ``quat`` is xyzw (Isaac)."""
-    qx, qy = quat_xyzw[:, 0], quat_xyzw[:, 1]
-    return 1.0 - 2.0 * (qx * qx + qy * qy)
 
 
 def peg_tilt_deg(quat_xyzw: torch.Tensor) -> torch.Tensor:

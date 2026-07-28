@@ -6,6 +6,21 @@ and drives the family's phase machine until every env terminates or times out.
 Prints phase-population and pose diagnostics as it goes. Run (isaac6 env):
 
     python scripts/experts/run_expert.py --headless --task peg_round_8mm --num_envs 4
+
+Common recording recipes (HDF5 under a path on the container bind mount)::
+
+    # Peg demos with dense staged reward + failures (PA-RL critic seed)
+    python scripts/experts/run_expert.py --headless --task peg_round_8mm \\
+        --num_envs 8 --waves 40 --max_demos 100 --keep_failures \\
+        --reward staged --record data/hdf5/peg_round_8mm_rewards.hdf5
+
+    # Same with potential-shaped reward
+    … --reward potential --record data/hdf5/peg_round_8mm_potential.hdf5
+
+    # Nut-thread tiers (success-filtered; longer episodes)
+    python scripts/experts/run_expert.py --headless --task nut_M16 \\
+        --num_envs 8 --waves 80 --max_demos 50 --episode_length_s 150 \\
+        --record data/hdf5/nut_M16.hdf5
 """
 
 import os

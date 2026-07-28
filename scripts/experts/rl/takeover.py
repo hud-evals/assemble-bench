@@ -1,18 +1,15 @@
 """Sim-side CG-DAgger: latch fail → override with the peg scripted expert.
 
-Opt-in gym wrapper. Policy (HUD) keeps stepping; for latched slots the action
-is replaced by ``peg.make_machine`` / ``Servo`` so HUD video stays one unbroken
-trace while recovery runs through episode end. Latch = ``policy/expert_active``.
+Opt-in gym wrapper (HUD / online assist). Policy keeps stepping; for latched
+slots the action is replaced by ``peg.make_machine`` / ``Servo`` so video stays
+one unbroken trace while recovery runs through episode end.
 
 Modes (``takeover_mode``):
   - ``grasp``  — missed pick (closed + retreating + peg on stand)
   - ``insert`` — lifted peg near mouth with no seating progress
   - ``both``   — grasp or insert
 
-Tilt (≥30° off-stand, not seated) always latches when takeover is on — tip-in-
-hand: soft tip→hole nudge near the bore then press; dropped: hover → regrasp.
-Insert handoff with tip ≳10° also routes there — keep grip, tool-down, small
-XY only (no wrist snap / park / drop).
+Tilt (≥30° off-stand, not seated) always latches when takeover is on.
 """
 
 from __future__ import annotations
@@ -23,7 +20,10 @@ from pathlib import Path
 import gymnasium as gym
 import torch
 
-from assembly_bench.environments.assembly.grasp_fail import (
+from assembly_bench.environments.assembly.tasks import peg_upright_cos
+from assembly_bench.environments.assembly.variants import TABLE_TOP_Z, VARIANTS
+
+from .grasp_fail import (
     FINGER_CLOSED,
     RETREAT_EPS,
     STALL_STEPS as GRASP_STALL_STEPS,
@@ -33,7 +33,7 @@ from assembly_bench.environments.assembly.grasp_fail import (
     peg_on_stand,
     update_stall,
 )
-from assembly_bench.environments.assembly.insert_fail import (
+from .insert_fail import (
     ALIGN_HANDOFF_XY,
     PROGRESS_EPS,
     STALL_STEPS as INSERT_STALL_STEPS,
@@ -45,16 +45,14 @@ from assembly_bench.environments.assembly.insert_fail import (
     seat_cost,
     update_insert_stall,
 )
-from assembly_bench.environments.assembly.tilt_fail import (
+from .tilt_fail import (
     STALL_STEPS as TILT_STALL_STEPS,
     TILT_COS,
     TILT_COS_INSERT,
     nearly_seated,
-    peg_upright_cos,
     tilt_fail_fire,
     update_tilt_stall,
 )
-from assembly_bench.environments.assembly.variants import TABLE_TOP_Z, VARIANTS
 
 _TAKEOVER_MODES = ("grasp", "insert", "both")
 
@@ -64,7 +62,8 @@ def _import_experts():
     import importlib.util
     import types
 
-    root = Path(__file__).resolve().parents[3]  # …/assembly_bench repo root
+    # …/scripts/experts/rl/takeover.py → repo root
+    root = Path(__file__).resolve().parents[3]
     experts_dir = root / "scripts" / "experts"
     pkg_name = "_assembly_bench_experts"
     if pkg_name not in sys.modules:
@@ -141,16 +140,16 @@ class ExpertTakeover(gym.Wrapper):
         self._prev_cost: torch.Tensor | None = None
         if self.enabled:
             self._build_expert()
-            # Slight headroom over peg default (40 s / 600 ticks) for tip recover.
+            # Match smoke/collect max-steps (450 ticks @ 15 Hz).
             cfg = self.env.unwrapped.cfg
-            target_s = 620 / 15.0  # 620 ticks @ 15 Hz
+            target_s = 450 / 15.0
             if float(cfg.episode_length_s) < target_s:
                 cfg.episode_length_s = target_s
-                print(f"[takeover] episode_length_s → {target_s:g} (620 ticks @ 15 Hz)", flush=True)
+                print(f"[takeover] episode_length_s → {target_s:g} (450 ticks @ 15 Hz)", flush=True)
             print(f"[takeover] mode={self.mode} (+tilt≥30°)", flush=True)
 
     def _publish_active(self):
-        """ObsTerm ``expert_active`` reads this buffer on the unwrapped env."""
+        """HUD / debug can read this buffer on the unwrapped env."""
         if self.taken is not None:
             self.env.unwrapped._expert_takeover_active = self.taken.float()
 
@@ -269,7 +268,7 @@ class ExpertTakeover(gym.Wrapper):
         if to_straighten.numel():
             self._machine.goto(to_straighten, self._phase_idx["straighten"])
         xy = peg_hole_xy(peg, hole)
-        # Near hole → align (center on bore) then press — never shimmy-press off-center.
+        # Near hole → align then press (skipping align into insert was 0/4).
         to_align = kept[xy[kept] < ALIGN_HANDOFF_XY]
         to_carry = kept[xy[kept] >= ALIGN_HANDOFF_XY]
         if to_carry.numel():
@@ -359,7 +358,7 @@ class ExpertTakeover(gym.Wrapper):
             expert = self._expert_action()
             act = torch.where(self.taken.unsqueeze(-1), expert, act)
 
-        # Wire the applied command for HG-DAgger labels (ObsTerm executed_action).
+        # Applied command for HG-DAgger labels (optional consumer).
         self.env.unwrapped._expert_executed_action = act.detach()
         self._publish_active()
         obs, rew, term, trunc, info = self.env.step(act)
@@ -370,10 +369,6 @@ class ExpertTakeover(gym.Wrapper):
         if done.any():
             self._clear_slots(done.nonzero(as_tuple=False).squeeze(-1))
             self._publish_active()
-            pol = obs.get("policy") if isinstance(obs, dict) else None
-            if isinstance(pol, dict) and "expert_active" in pol:
-                pol["expert_active"] = pol["expert_active"].clone()
-                pol["expert_active"][done] = 0
 
         info = {**(info or {}), "expert_active": self.taken.detach().cpu().numpy()}
         return obs, rew, term, trunc, info

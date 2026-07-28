@@ -80,7 +80,8 @@ def make_assembly_camera_cfg(embodiment):
     """The embodiment's camera config with its exterior views replaced by
     ``front_cam``. Wrist cameras keep the calibrated Robotiq mount pose/intrinsics
     (verified frame-for-frame against the source benchmark's demos) but their
-    render resolution is dropped to match the front cam (RENDER_W/H)."""
+    render resolution is dropped to match the front cam (RENDER_W/H).
+    """
     fields = []
     for name in getattr(embodiment.camera_config, "__dataclass_fields__", {}):
         cam = getattr(embodiment.camera_config, name)

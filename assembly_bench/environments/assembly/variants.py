@@ -8,6 +8,7 @@ defines success. Kept free of Isaac imports so the CLI can list ``--task``
 choices before the simulator app launches.
 """
 
+import math
 from dataclasses import dataclass
 
 # Nominal tabletop height (Factory convention: parts are authored so z=0 is
@@ -45,6 +46,10 @@ class AssemblyVariant:
     held_base_z_off: float = 0.0
     align_tol: float = 0.0025         # xy distance to target
     seat_tol: float = 0.003           # seat gap (one-sided: gap < tol)
+    # Optional seat hardeners (nuts): reject side-squeeze / forced tip push.
+    min_upright_cos: float | None = None      # held local +z vs world +z
+    seat_overshoot_tol: float | None = None   # also require gap > -tol
+    min_thread_rad: float | None = None       # cumulative |Δyaw| on the bolt
     # Staged-reward geometry (reward_mode="staged"): engage gap (socket/shaft/
     # thread mouth), depth scale for Φ_depth, lift-clear height off the stand.
     engage_gap: float = 0.025
@@ -128,7 +133,8 @@ def _nut(size: int) -> AssemblyVariant:
     """Thread the nut onto its bolt on the NIST GMC board (loose clearance).
     Success is only reachable by helical threading (a straight push jams): nut
     base descends to head_h + shank - 1.5*pitch, within pitch*0.375
-    (FORGE-faithful). The bolt + board are pinned dead-center; only the nut
+    (FORGE-faithful), upright, without overshooting past the seat, and with
+    enough on-bolt yaw. The bolt + board are pinned dead-center; only the nut
     jitters."""
     d = NUTBOLT[size]
     return AssemblyVariant(
@@ -142,6 +148,12 @@ def _nut(size: int) -> AssemblyVariant:
         seat_off=(0.0, 0.0, d["head_h"] + d["shank"] - 1.5 * d["pitch"]),
         held_base_z_off=d["head_h"],
         seat_tol=0.375 * d["pitch"],
+        # Side-squeeze FPs: root near the bolt axis while the hex is tipped.
+        min_upright_cos=0.9,
+        seat_overshoot_tol=1.5 * d["pitch"],
+        # Floor at first meaningful on-bolt turn (matches reward THREAD_START).
+        # Higher floors (e.g. 3/4 turn) rejected upright policy seatings in eval.
+        min_thread_rad=0.3,
         engage_gap=0.01,           # thread mouth is close; engage = nut on the bolt tip
         rand_xy=0.03,
         rand_fixed_xy=0.0,
