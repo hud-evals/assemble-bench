@@ -7,18 +7,18 @@ one of 14 benchmark variants (peg insert / gear mesh / nut thread), plus a
     python isaaclab_arena/evaluation/policy_runner.py \\
         --policy_type zero_action --num_episodes 1 \\
         --external_environment_class_path \\
-        assembly_bench.environments.assembly.assembly:AssembleBenchEnvironment \\
-        assembly_bench --task peg_round_8mm
+        assemble_bench.environments.assembly.assembly:AssembleBenchEnvironment \\
+        assemble_bench --task peg_round_8mm
 """
 
 import argparse
 
 from isaaclab_arena_environments.example_environment_base import ExampleEnvironmentBase
 
-from assembly_bench.environments.assembly.variants import TABLE_TOP_Z, VARIANTS
+from assemble_bench.environments.assembly.variants import TABLE_TOP_Z, VARIANTS
 
 
-def assembly_bench_env_cfg_callback(env_cfg):
+def assemble_bench_env_cfg_callback(env_cfg):
     """Arena's assembly sim settings, at the benchmark's 15 Hz control rate.
 
     Arena's callback sets 60 Hz physics with decimation 2 (30 Hz control);
@@ -58,7 +58,7 @@ def assembly_bench_env_cfg_callback(env_cfg):
 
 class AssembleBenchEnvironment(ExampleEnvironmentBase):
 
-    name: str = "assembly_bench"
+    name: str = "assemble_bench"
 
     def get_env(self, args_cli: argparse.Namespace):
         import isaaclab.sim as sim_utils
@@ -71,10 +71,10 @@ class AssembleBenchEnvironment(ExampleEnvironmentBase):
 
         # Importing scene registers the asm_* assets with the AssetRegistry;
         # importing embodiments registers droid_abs_joint_pos_softmimic.
-        import assembly_bench.environments.assembly.embodiments  # noqa: F401
-        import assembly_bench.environments.assembly.scene  # noqa: F401
-        from assembly_bench.environments.assembly.cameras import make_assembly_camera_cfg
-        from assembly_bench.environments.assembly.tasks import NISTAssemblyTask
+        import assemble_bench.environments.assembly.embodiments  # noqa: F401
+        import assemble_bench.environments.assembly.scene  # noqa: F401
+        from assemble_bench.environments.assembly.cameras import make_assembly_camera_cfg
+        from assemble_bench.environments.assembly.tasks import NISTAssemblyTask
 
         variant = VARIANTS[args_cli.task]
 
@@ -149,7 +149,7 @@ class AssembleBenchEnvironment(ExampleEnvironmentBase):
         from isaaclab.managers import ObservationTermCfg as ObsTerm
         from isaaclab.managers import SceneEntityCfg
 
-        from assembly_bench.environments.assembly.observations import asset_root_pose
+        from assemble_bench.environments.assembly.observations import asset_root_pose
 
         embodiment.observation_config.policy.held_part_pose = ObsTerm(
             func=asset_root_pose, params={"asset_cfg": SceneEntityCfg("held_part")})
@@ -164,7 +164,7 @@ class AssembleBenchEnvironment(ExampleEnvironmentBase):
             embodiment=embodiment,
             scene=scene,
             task=task,
-            env_cfg_callback=assembly_bench_env_cfg_callback,
+            env_cfg_callback=assemble_bench_env_cfg_callback,
         )
 
     @staticmethod

@@ -24,7 +24,7 @@ with SimulationAppContext(args_cli):
     from PIL import Image
 
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
-    from assembly_bench.environments.assembly.assembly import AssembleBenchEnvironment
+    from assemble_bench.environments.assembly.assembly import AssembleBenchEnvironment
 
     AssembleBenchEnvironment.add_cli_args(parser)
     parser.add_argument("--out", type=str, default="/tmp/assembly_preview",

@@ -1,7 +1,7 @@
 # Task suites (HUD run lists)
 
 **Define** a task in
-[`environments/assembly/variants.py`](../assembly_bench/environments/assembly/variants.py)
+[`environments/assembly/variants.py`](../assemble_bench/environments/assembly/variants.py)
 (`held` / `fixed` / seat geometry / instruction). That catalog is the source of truth.
 
 **Run** a batch by pointing HUD at a suite under this folder. Suites only list task
@@ -54,6 +54,6 @@ Single-task check straight through Isaac Sim, no HUD involved:
 python isaaclab_arena/evaluation/policy_runner.py \
     --policy_type zero_action --num_episodes 1 \
     --external_environment_class_path \
-    assembly_bench.environments.assembly.assembly:AssembleBenchEnvironment \
-    assembly_bench --task peg_round_8mm
+    assemble_bench.environments.assembly.assembly:AssembleBenchEnvironment \
+    assemble_bench --task peg_round_8mm
 ```

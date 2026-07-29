@@ -34,12 +34,12 @@ every episode. Part poses are jittered every episode.
 Front-camera rollouts from [`pi05-AssembleBench-12k`](https://huggingface.co/hud-evals/pi05-AssembleBench-12k), 5×:
 
 <p align="center">
-  <img src="docs/media/pi05_round_peg.gif" width="49%" alt="pi0.5 success – round peg insertion (peg_round_4mm)" />
-  <img src="docs/media/pi05_square_peg.gif" width="49%" alt="pi0.5 success – square peg insertion (peg_square_16mm)" />
+  <img src="results/pi05_round_peg.gif" width="49%" alt="pi0.5 success – round peg insertion (peg_round_4mm)" />
+  <img src="results/pi05_square_peg.gif" width="49%" alt="pi0.5 success – square peg insertion (peg_square_16mm)" />
 </p>
 <p align="center">
-  <img src="docs/media/pi05_gear.gif" width="49%" alt="pi0.5 success – gear meshing (gear_large)" />
-  <img src="docs/media/pi05_nut.gif" width="49%" alt="pi0.5 success – nut threading (nut_M16)" />
+  <img src="results/pi05_gear.gif" width="49%" alt="pi0.5 success – gear meshing (gear_large)" />
+  <img src="results/pi05_nut.gif" width="49%" alt="pi0.5 success – nut threading (nut_M16)" />
 </p>
 
 <p align="center">
@@ -114,7 +114,7 @@ done
 pip install -e submodules/IsaacLab-Arena "pin-pink==3.1.0" "rsl-rl-lib==5.0.1"
 
 # This bench + HUD serving stack for Path B:
-pip install -e assembly_bench
+pip install -e assemble_bench
 # GymBridge/Shared from hud-python#481 (not on PyPI 0.6.x yet):
 pip install "hud @ git+https://github.com/hud-evals/hud-python.git@a08d8d83fe56c9427bcba53536c548410dedd330" msgpack
 pip install --no-deps "av>=12" "openpi-client==0.1.2"
@@ -137,8 +137,8 @@ cd submodules/IsaacLab-Arena
 OMNI_KIT_ACCEPT_EULA=YES python isaaclab_arena/evaluation/policy_runner.py \
     --policy_type zero_action --num_episodes 1 --headless \
     --external_environment_class_path \
-    assembly_bench.environments.assembly.assembly:AssembleBenchEnvironment \
-    assembly_bench --task peg_round_8mm
+    assemble_bench.environments.assembly.assembly:AssembleBenchEnvironment \
+    assemble_bench --task peg_round_8mm
 ```
 
 | Flag | Default | Notes |
@@ -228,7 +228,7 @@ assemble-bench/
 ├── scripts/setup_sim.sh     Host Isaac Sim install steps
 ├── scripts/setup_agent.sh   Path B agent env install
 ├── requirements-agent.txt   agent-side pins (Path B); .lock is the full freeze
-├── assembly_bench/          pip-installable Arena environment package
+├── assemble_bench/          pip-installable Arena environment package
 │   ├── environments/assembly/   variants.py (task catalog), scene, tasks, rewards
 │   └── assets/parts/            pegs, gears, nuts, NIST board
 ├── examples/                pi0.5 VLA + eval runner
@@ -241,7 +241,7 @@ assemble-bench/
 ### Adding your own task
 
 Add an entry to `VARIANTS` in
-[`variants.py`](assembly_bench/environments/assembly/variants.py) (parts, poses, seat
+[`variants.py`](assemble_bench/environments/assembly/variants.py) (parts, poses, seat
 geometry), then run `python scripts/taskset.py` to refresh the HUD run lists. See
 [`tasks/README.md`](tasks/README.md).
 

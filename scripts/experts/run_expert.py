@@ -42,8 +42,8 @@ with SimulationAppContext(args_cli):
     import hud
     import warp as wp
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
-    from assembly_bench.environments.assembly.assembly import AssembleBenchEnvironment
-    from assembly_bench.environments.assembly.variants import VARIANTS
+    from assemble_bench.environments.assembly.assembly import AssembleBenchEnvironment
+    from assemble_bench.environments.assembly.variants import VARIANTS
 
     from experts import gear, nut, peg
     from experts.base import Servo, pos_of, quat_of

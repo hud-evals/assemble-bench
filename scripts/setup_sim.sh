@@ -113,8 +113,8 @@ ${PY[@]} -m pip install -e submodules/IsaacLab-Arena
 # (same pins as docker/Dockerfile).
 ${PY[@]} -m pip install "pin-pink==3.1.0" "rsl-rl-lib==5.0.1"
 
-echo "[setup] installing assembly_bench…"
-${PY[@]} -m pip install -e assembly_bench
+echo "[setup] installing assemble_bench…"
+${PY[@]} -m pip install -e assemble_bench
 
 echo "[setup] installing HUD serving stack (Path B)…"
 # GymBridge / Shared live on this commit (hud-python#481) until they ship on PyPI.
@@ -133,8 +133,8 @@ Quick smoke (Path A):
   OMNI_KIT_ACCEPT_EULA=YES ${PY[*]} isaaclab_arena/evaluation/policy_runner.py \\
       --policy_type zero_action --num_episodes 1 --headless \\
       --external_environment_class_path \\
-      assembly_bench.environments.assembly.assembly:AssembleBenchEnvironment \\
-      assembly_bench --task peg_round_8mm
+      assemble_bench.environments.assembly.assembly:AssembleBenchEnvironment \\
+      assemble_bench --task peg_round_8mm
 
 Or:  OMNI_KIT_ACCEPT_EULA=YES ${PY[*]} scripts/preview_assembly.py --task peg_round_8mm --out /tmp/peg
 EOF

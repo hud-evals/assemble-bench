@@ -78,11 +78,11 @@ RUN ${ISAAC_PY} -m pip install --no-cache-dir --ignore-installed \
     && ${ISAAC_PY} -c "from openpi_client import msgpack_numpy; print('openpi/0 codec OK')" \
     && ${ISAAC_PY} -c "from hud.environment.robot import GymBridge; from hud.eval.runtime import Shared; print('hud robot stack OK')"
 
-# The bench: env server + the assembly_bench package (parts, HDRIs, variants).
-COPY assembly_bench /app/assembly_bench/assembly_bench
-COPY agents /app/assembly_bench/agents
-COPY env.py contract.json /app/assembly_bench/
-RUN ${ISAAC_PY} -m pip install --no-deps -e /app/assembly_bench/assembly_bench
+# The bench: env server + the assemble_bench package (parts, HDRIs, variants).
+COPY assemble_bench /app/assemble_bench/assemble_bench
+COPY agents /app/assemble_bench/agents
+COPY env.py contract.json /app/assemble_bench/
+RUN ${ISAAC_PY} -m pip install --no-deps -e /app/assemble_bench/assemble_bench
 
 ENV OMNI_KIT_ACCEPT_EULA=YES \
     ACCEPT_EULA=Y \
@@ -93,7 +93,7 @@ ENV OMNI_KIT_ACCEPT_EULA=YES \
 # rides its capability tunnel.
 EXPOSE 8765
 
-WORKDIR /app/assembly_bench
+WORKDIR /app/assemble_bench
 # The base image's entrypoint launches kit directly and would eat this CMD.
 ENTRYPOINT []
 CMD ["/isaac-sim/python.sh", "-m", "hud.environment.server", \

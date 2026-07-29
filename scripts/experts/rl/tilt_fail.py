@@ -19,7 +19,7 @@ import math
 
 import torch
 
-from assembly_bench.environments.assembly.tasks import peg_upright_cos
+from assemble_bench.environments.assembly.tasks import peg_upright_cos
 
 TILT_DEG = 30.0
 TILT_DEG_INSERT = 12.0

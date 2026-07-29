@@ -1,8 +1,8 @@
-# BuildKit per-Dockerfile ignore: the context is the assembly_bench repo root.
+# BuildKit per-Dockerfile ignore: the context is the assemble_bench repo root.
 # The image needs the bench package, the HUD entry point, and the Arena checkout
 # (minus its heavy dev submodules — Isaac Lab itself IS needed).
 *
-!assembly_bench
+!assemble_bench
 !agents
 !env.py
 !contract.json

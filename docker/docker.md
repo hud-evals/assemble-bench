@@ -7,7 +7,7 @@ the robot WebSocket rides the control channel's capability tunnel.
 
 ## Build
 
-Build from the **assembly_bench repo root** (no sibling repos needed):
+Build from the **assemble_bench repo root** (no sibling repos needed):
 
 ```bash
 ./scripts/setup_sim.sh --submodules-only   # Arena + IsaacLab over HTTPS (no SSH keys)
@@ -75,8 +75,8 @@ docker run --rm --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all -e OMNI_KIT_ACCEPT_
     /workspace/isaaclab_arena/evaluation/policy_runner.py \
     --policy_type zero_action --num_episodes 1 --headless \
     --external_environment_class_path \
-    assembly_bench.environments.assembly.assembly:AssembleBenchEnvironment \
-    assembly_bench --task peg_round_8mm
+    assemble_bench.environments.assembly.assembly:AssembleBenchEnvironment \
+    assemble_bench --task peg_round_8mm
 ```
 
 The same cache mounts as above apply (first run is a cold boot otherwise).

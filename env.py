@@ -64,7 +64,7 @@ def make_env(
 
         _app = AppLauncher(headless=True, enable_cameras=True).app
 
-    from assembly_bench.environments.assembly.assembly import make_assembly_env
+    from assemble_bench.environments.assembly.assembly import make_assembly_env
 
     # GymBridge may pass build args as strings from the wire.
     if isinstance(expert_takeover, str):

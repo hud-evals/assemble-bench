@@ -31,7 +31,7 @@ from isaaclab_arena.metrics.success_rate import SuccessRateMetric
 from isaaclab_arena.tasks.task_base import TaskBase
 from isaaclab_arena.utils.cameras import get_viewer_cfg_look_at_object
 
-from assembly_bench.environments.assembly.variants import TABLE_TOP_Z, AssemblyVariant
+from assemble_bench.environments.assembly.variants import TABLE_TOP_Z, AssemblyVariant
 
 # Success must hold this many consecutive steps (debounces one-frame trues).
 SUCCESS_HOLD_STEPS = 3
@@ -445,7 +445,7 @@ class NISTAssemblyTask(TaskBase):
         """Dense RL reward when reward_mode is staged|potential, else none."""
         if self.reward_mode not in ("staged", "potential"):
             return None
-        from assembly_bench.environments.assembly.rewards import build_rewards_cfg
+        from assemble_bench.environments.assembly.rewards import build_rewards_cfg
         return build_rewards_cfg(self.variant, self.held, self.fixed,
                                  mode=self.reward_mode)
 

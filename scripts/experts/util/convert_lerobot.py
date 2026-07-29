@@ -28,9 +28,9 @@ os.environ["HF_HUB_DISABLE_XET"] = "1"
 import h5py
 import numpy as np
 
-# util/ -> experts/ -> scripts/ -> assembly_bench/
+# util/ -> experts/ -> scripts/ -> assemble_bench/
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-# project root (parent of assembly_bench) for inventory.recording.sa_align
+# project root (parent of assemble_bench) for inventory.recording.sa_align
 _PROJECT = os.path.dirname(ROOT)
 if _PROJECT not in sys.path:
     sys.path.insert(0, _PROJECT)

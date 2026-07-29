@@ -42,7 +42,7 @@ from isaaclab.managers import ObservationTermCfg as ObsTerm, SceneEntityCfg
 from isaaclab_arena.assets.register import register_asset
 from isaaclab_arena.embodiments.droid.droid import DroidAbsoluteJointPositionEmbodiment
 
-from assembly_bench.environments.assembly.observations import arm_joint_vel, part_pose
+from assemble_bench.environments.assembly.observations import arm_joint_vel, part_pose
 
 # Robotiq 2F-85 mimic-joint prims (relative to the flattened DROID asset) and
 # the PhysX penalty-spring axis each one couples.

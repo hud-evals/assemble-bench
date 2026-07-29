@@ -20,8 +20,8 @@ from pathlib import Path
 import gymnasium as gym
 import torch
 
-from assembly_bench.environments.assembly.tasks import peg_upright_cos
-from assembly_bench.environments.assembly.variants import TABLE_TOP_Z, VARIANTS
+from assemble_bench.environments.assembly.tasks import peg_upright_cos
+from assemble_bench.environments.assembly.variants import TABLE_TOP_Z, VARIANTS
 
 from .grasp_fail import (
     FINGER_CLOSED,
@@ -65,7 +65,7 @@ def _import_experts():
     # …/scripts/experts/rl/takeover.py → repo root
     root = Path(__file__).resolve().parents[3]
     experts_dir = root / "scripts" / "experts"
-    pkg_name = "_assembly_bench_experts"
+    pkg_name = "_assemble_bench_experts"
     if pkg_name not in sys.modules:
         pkg = types.ModuleType(pkg_name)
         pkg.__path__ = [str(experts_dir)]

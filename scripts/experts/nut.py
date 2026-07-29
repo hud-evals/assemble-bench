@@ -14,7 +14,7 @@ import torch
 import warp as wp
 from isaaclab.utils.math import quat_apply, quat_apply_inverse, quat_error_magnitude
 
-from assembly_bench.environments.assembly.variants import NUTBOLT, NUT_BASE_TOP
+from assemble_bench.environments.assembly.variants import NUTBOLT, NUT_BASE_TOP
 
 from .base import Machine, Phase, home_quat, pos_of, quat_of, rolled
 

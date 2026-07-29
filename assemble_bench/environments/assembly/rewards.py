@@ -25,8 +25,8 @@ from isaaclab.managers import ManagerTermBase, RewardTermCfg, SceneEntityCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.math import quat_apply
 
-from assembly_bench.environments.assembly.tasks import part_seated, peg_upright_cos
-from assembly_bench.environments.assembly.variants import TABLE_TOP_Z, AssemblyVariant
+from assemble_bench.environments.assembly.tasks import part_seated, peg_upright_cos
+from assemble_bench.environments.assembly.variants import TABLE_TOP_Z, AssemblyVariant
 
 # Once-fired milestones.
 W_LIFT = 0.5
