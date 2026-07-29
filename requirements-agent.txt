@@ -1,5 +1,6 @@
 # Agent-side deps for Path B (examples/run_eval.py) — exact tested versions.
-# Install into a normal Python 3.10+ env — NOT the Isaac Sim environment.
+# Install into a normal Python 3.12+ env — NOT the Isaac Sim environment.
+# (lerobot 0.6 requires >=3.12; Ubuntu 22.04's system 3.10 is not enough.)
 # The simulator and the policy talk over TCP and can live on different machines.
 #
 #   pip install -r requirements-agent.txt
@@ -11,7 +12,9 @@
 
 torch==2.11.0
 lerobot[pi]==0.6.0
-hud==0.6.10        # the HUD SDK — renamed on PyPI, was hud-python
+# HUD SDK (env.gym / GymBridge / Shared). Pin is the open robot-stack PR until
+# those land on PyPI — PyPI 0.6.10–0.6.12 do not yet export them.
+hud @ git+https://github.com/hud-evals/hud-python.git@a08d8d83fe56c9427bcba53536c548410dedd330
 
 # Robot capability wire. Missing these fails late: without `av` a rollout dies
 # mid-run; without openpi-client/msgpack the agent errors at import.

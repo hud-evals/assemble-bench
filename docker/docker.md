@@ -17,8 +17,11 @@ docker build -f docker/Dockerfile -t hud-assembly-env .
 Needs an NVIDIA NGC login to pull the Isaac Sim base image
 (`docker login nvcr.io`).
 
-The image installs `hud` (the HUD SDK, formerly `hud-python`) from PyPI into kit's
-Python (constraint-frozen so kit-owned packages are never upgraded).
+The image installs `hud` (the HUD SDK, formerly `hud-python`) from the
+[hud-python#481](https://github.com/hud-evals/hud-python/pull/481) commit into kit's
+Python (constraint-frozen so kit-owned packages are never upgraded). That pin is
+required for Path B (`GymBridge` / `Shared` / `env.gym`); PyPI `0.6.10`–`0.6.12` do
+not export them yet.
 
 ## Run
 

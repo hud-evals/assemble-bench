@@ -45,10 +45,12 @@ Then, per install option below:
 - **Host Isaac Sim:** [Isaac Sim 6.x](https://docs.isaacsim.omniverse.nvidia.com/current/installation/download.html)
   installed, and `export OMNI_KIT_ACCEPT_EULA=YES` in every shell that launches Isaac.
 
-Path B's agent side also needs a normal Python 3.10+ env (separate from Isaac) and a
-Hugging Face login that has accepted
+Path B's agent side also needs a normal **Python 3.12+** env (separate from Isaac;
+`lerobot==0.6.0` will not install on 3.10) and a Hugging Face login that has accepted
 [`google/paligemma-3b-pt-224`](https://huggingface.co/google/paligemma-3b-pt-224)
-(the pi0.5 tokenizer is gated; the checkpoints themselves are public).
+(the pi0.5 tokenizer is gated; the checkpoints themselves are public). On Ubuntu,
+install `python3.12-venv` (e.g. via [deadsnakes](https://launchpad.net/~deadsnakes/+archive/ubuntu/ppa)
+on 22.04) before creating the agent venv.
 
 ### Tested versions
 
@@ -59,8 +61,8 @@ Everything below is pinned – nothing to guess or resolve by hand:
 | Isaac Sim (Docker base) | `nvcr.io/nvidia/isaac-sim:6.0.0-dev2` | [`docker/Dockerfile`](docker/Dockerfile) |
 | Isaac Sim (host install) | pip `isaacsim[all,extscache]==6.0.0.1` | – |
 | Isaac Lab + Isaac Lab Arena | exact commits | git submodules (`git submodule status --recursive`) |
-| `hud` (the HUD SDK; renamed on PyPI from `hud-python`) | `0.6.10` | setup scripts + Dockerfile |
-| Agent env – torch `2.11.0`, lerobot `0.6.0`, … | full freeze | [`requirements-agent.lock`](requirements-agent.lock) |
+| `hud` (the HUD SDK; renamed on PyPI from `hud-python`) | git `a08d8d83` ([#481](https://github.com/hud-evals/hud-python/pull/481) — `GymBridge` / `Shared`) | setup scripts + Dockerfile + [`requirements-agent.txt`](requirements-agent.txt) |
+| Agent env – torch `2.11.0`, lerobot `0.6.0`, … | full freeze (Python 3.12) | [`requirements-agent.lock`](requirements-agent.lock) |
 
 ## Install
 
@@ -106,7 +108,8 @@ pip install -e submodules/IsaacLab-Arena "pin-pink==3.1.0" "rsl-rl-lib==5.0.1"
 
 # This bench, and the HUD serving stack for Path B:
 pip install -e assembly_bench
-pip install "hud==0.6.10" msgpack
+# Path B needs GymBridge/Shared from hud-python#481 (not on PyPI 0.6.x yet):
+pip install "hud @ git+https://github.com/hud-evals/hud-python.git@a08d8d83fe56c9427bcba53536c548410dedd330" msgpack
 pip install --no-deps "av>=12" "openpi-client==0.1.2"
 ```
 
@@ -115,16 +118,19 @@ Arena stays unmodified; this repo plugs in through its registration API.
 
 ### Agent environment (Path B only)
 
-In a **separate**, normal Python 3.10+ env – not the Isaac one:
+In a **separate**, normal Python **3.12+** env – not the Isaac one:
 
 ```bash
+python3.12 -m venv .venv-agent && source .venv-agent/bin/activate
 pip install -r requirements-agent.txt
 pip install --no-deps openpi-client==0.1.2   # pins numpy<2; only its msgpack codec is used
 hf auth login                                # after accepting the PaliGemma gate above
 ```
 
 `./scripts/setup_agent.sh` runs the two pip installs. To reproduce the exact tested
-environment instead: `pip install --no-deps -r requirements-agent.lock`.
+environment instead: `pip install --no-deps -r requirements-agent.lock` (then still
+install the `hud` git pin from [`requirements-agent.txt`](requirements-agent.txt) if
+the lock install skipped VCS lines).
 
 ## Running the benchmark
 

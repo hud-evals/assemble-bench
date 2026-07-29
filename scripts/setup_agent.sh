@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install Path B *agent-side* deps into a normal Python 3.10+ env (not Isaac).
+# Install Path B *agent-side* deps into a normal Python 3.12+ env (not Isaac).
 # The agent talks to the served env over TCP. Runs exactly the two pip
 # commands from the README:
 #

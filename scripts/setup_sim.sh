@@ -117,7 +117,10 @@ echo "[setup] installing assembly_bench…"
 ${PY[@]} -m pip install -e assembly_bench
 
 echo "[setup] installing HUD serving stack (Path B)…"
-${PY[@]} -m pip install "hud==0.6.10" msgpack
+# GymBridge / Shared live on this commit (hud-python#481) until they ship on PyPI.
+${PY[@]} -m pip install \
+  "hud @ git+https://github.com/hud-evals/hud-python.git@a08d8d83fe56c9427bcba53536c548410dedd330" \
+  msgpack
 # openpi-client pins numpy<2 but only its msgpack codec is used; av just for wheels.
 ${PY[@]} -m pip install --no-deps "av>=12" "openpi-client==0.1.2"
 

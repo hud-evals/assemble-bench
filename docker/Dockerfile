@@ -60,7 +60,9 @@ RUN ${ISAAC_PY} -m pip install --no-cache-dir "pin-pink==3.1.0" \
 # (--ignore-installed) the few packages hud needs newer, then install hud
 # against a constraints freeze of everything else (pip can add, never
 # upgrade/remove).
-ARG HUD_VERSION=0.6.10
+# GymBridge / Shared / env.gym — open hud-python#481 until those land on PyPI.
+# PyPI 0.6.10–0.6.12 do not export them; Path B fails at import without this pin.
+ARG HUD_GIT_REF=a08d8d83fe56c9427bcba53536c548410dedd330
 # openai is excluded from the freeze: kit ships a newer pin while hud wants 2.44,
 # and the env server never imports kit's openai path.
 RUN ${ISAAC_PY} -m pip install --no-cache-dir --ignore-installed \
@@ -70,10 +72,11 @@ RUN ${ISAAC_PY} -m pip install --no-cache-dir --ignore-installed \
         | grep -v -E "\+|@ file|prompt.toolkit|^(packaging|pydantic|pyperclip|uvicorn|websockets|openai)==" \
         > /tmp/kit-constraints.txt \
     && ${ISAAC_PY} -m pip install --no-cache-dir -c /tmp/kit-constraints.txt \
-        "hud==${HUD_VERSION}" msgpack \
+        "hud @ git+https://github.com/hud-evals/hud-python.git@${HUD_GIT_REF}" msgpack \
     && ${ISAAC_PY} -m pip install --no-cache-dir --no-deps "av==18.0.0" \
     && ${ISAAC_PY} -m pip install --no-cache-dir --no-deps "openpi-client==0.1.2" \
-    && ${ISAAC_PY} -c "from openpi_client import msgpack_numpy; print('openpi/0 codec OK')"
+    && ${ISAAC_PY} -c "from openpi_client import msgpack_numpy; print('openpi/0 codec OK')" \
+    && ${ISAAC_PY} -c "from hud.environment.robot import GymBridge; from hud.eval.runtime import Shared; print('hud robot stack OK')"
 
 # The bench: env server + the assembly_bench package (parts, HDRIs, variants).
 COPY assembly_bench /app/assembly_bench/assembly_bench
