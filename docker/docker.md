@@ -1,4 +1,4 @@
-# Assembly Bench in Docker
+# AssembleBench in Docker
 
 Serves `env.py` behind the HUD entry point. One published port (8765) is enough —
 the robot WebSocket rides the control channel's capability tunnel.
@@ -75,7 +75,7 @@ docker run --rm --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all -e OMNI_KIT_ACCEPT_
     /workspace/isaaclab_arena/evaluation/policy_runner.py \
     --policy_type zero_action --num_episodes 1 --headless \
     --external_environment_class_path \
-    assembly_bench.environments.assembly.assembly:AssemblyBenchEnvironment \
+    assembly_bench.environments.assembly.assembly:AssembleBenchEnvironment \
     assembly_bench --task peg_round_8mm
 ```
 

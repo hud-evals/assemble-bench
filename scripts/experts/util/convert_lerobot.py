@@ -38,7 +38,7 @@ from inventory.recording.sa_align import maybe_realign_episode  # noqa: E402
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--glob", default=os.path.join(ROOT, "data", "hdf5", "*.hdf5"))
-parser.add_argument("--repo_id", default="hud-evals/AssemblyBench")
+parser.add_argument("--repo_id", default="hud-evals/AssembleBench")
 parser.add_argument("--fps", type=int, default=15)
 parser.add_argument("--crf", type=int, default=20)
 parser.add_argument("--push", action="store_true")

@@ -69,14 +69,14 @@ The run prints a job URL either way; it only resolves to something when a key is
 
 ## Checkpoints
 
-Reference pi0.5 checkpoints from the [writeup](https://www.hud.ai/blog/assembly-benchmark),
+Reference pi0.5 checkpoints from the [writeup](https://www.hud.ai/blog/assemble-benchmark),
 all finetuned from [`DAVIAN-Robotics/pi05_droid_jointpos`](https://huggingface.co/DAVIAN-Robotics/pi05_droid_jointpos)
-on [`hud-evals/AssemblyBench`](https://huggingface.co/datasets/hud-evals/AssemblyBench):
+on [`hud-evals/AssembleBench`](https://huggingface.co/datasets/hud-evals/AssembleBench):
 
 | Checkpoint | What it is |
 |---|---|
-| [`hud-evals/pi05-AssemblyBench-12k`](https://huggingface.co/hud-evals/pi05-AssemblyBench-12k) | behavior-cloning baseline, trained on all 14 tasks |
-| [`hud-evals/pi05-AssemblyBench-cgdagger-r3`](https://huggingface.co/hud-evals/pi05-AssemblyBench-cgdagger-r3) | BC + 3 rounds of code-gated DAgger – the default here |
+| [`hud-evals/pi05-AssembleBench-12k`](https://huggingface.co/hud-evals/pi05-AssembleBench-12k) | behavior-cloning baseline, trained on all 14 tasks |
+| [`hud-evals/pi05-AssembleBench-cgdagger-r3`](https://huggingface.co/hud-evals/pi05-AssembleBench-cgdagger-r3) | BC + 3 rounds of code-gated DAgger – the default here |
 
 The CG-DAgger checkpoint was trained only on `peg_round_8mm` corrections, so the other
 round-peg sizes measure whether the recovery transfers. Base DROID checkpoints score 0%

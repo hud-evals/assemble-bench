@@ -1,4 +1,4 @@
-"""pi0.5 DROID policy for Assembly Bench — self-contained, no repo-local imports.
+"""pi0.5 DROID policy for AssembleBench — self-contained, no repo-local imports.
 
 Loads a LeRobot pi0.5 checkpoint (Hugging Face repo id or local directory) and
 wires it to the benchmark's DROID contract: front + wrist RGB, 7 joint positions
@@ -27,7 +27,7 @@ from hud.agents.robot import Adapter, LeRobotModel, RobotAgent
 
 # Final checkpoint from the writeup: pi0.5 BC (12k) + 3 rounds of code-gated
 # DAgger on peg_round_8mm.
-DEFAULT_CHECKPOINT = "hud-evals/pi05-AssemblyBench-cgdagger-r3"
+DEFAULT_CHECKPOINT = "hud-evals/pi05-AssembleBench-cgdagger-r3"
 
 IMG = 224      # the checkpoint's camera resolution
 HORIZON = 15   # open-loop action-chunk length
@@ -92,7 +92,7 @@ class DroidAdapter(Adapter):
 
 
 class PI05AssemblyAgent(RobotAgent):
-    """pi0.5 rollouts on Assembly Bench, with a per-family episode length."""
+    """pi0.5 rollouts on AssembleBench, with a per-family episode length."""
 
     adapter_cls = DroidAdapter
 

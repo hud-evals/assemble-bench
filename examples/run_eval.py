@@ -1,4 +1,4 @@
-"""Evaluate a pi0.5 checkpoint on Assembly Bench through HUD.
+"""Evaluate a pi0.5 checkpoint on AssembleBench through HUD.
 
 Serve the environment first (repo README, Path B), then run this from the repo root::
 

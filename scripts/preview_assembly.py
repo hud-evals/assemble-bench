@@ -24,16 +24,16 @@ with SimulationAppContext(args_cli):
     from PIL import Image
 
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
-    from assembly_bench.environments.assembly.assembly import AssemblyBenchEnvironment
+    from assembly_bench.environments.assembly.assembly import AssembleBenchEnvironment
 
-    AssemblyBenchEnvironment.add_cli_args(parser)
+    AssembleBenchEnvironment.add_cli_args(parser)
     parser.add_argument("--out", type=str, default="/tmp/assembly_preview",
                         help="output stem; saves <out>_front.png and <out>_wrist.png")
     parser.add_argument("--settle_steps", type=int, default=40)
     args_cli, _ = parser.parse_known_args()
     args_cli.enable_cameras = True  # re-parse resets it
 
-    env_def = AssemblyBenchEnvironment()
+    env_def = AssembleBenchEnvironment()
     arena_env = env_def.get_env(args_cli)
     env = ArenaEnvBuilder(arena_env, args_cli).make_registered(render_mode="rgb_array")
     env.reset()

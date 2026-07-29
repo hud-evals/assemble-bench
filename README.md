@@ -1,4 +1,4 @@
-# Assembly Bench
+# AssembleBench
 
 **Contact-rich robot assembly tasks for evaluating and training VLAs.**
 Tested headless on L40S, RTX 6000 Ada, and RTX PRO 6000 Blackwell GPUs.
@@ -10,9 +10,9 @@ Robotiq 2F-85), so any DROID checkpoint plugs in without retargeting. Every task
 on real assembly geometry rather than a proximity heuristic: the part has to actually seat,
 and a gear that clashes teeth or a nut that cross-threads cannot descend.
 
-- Blog post: [Benchmarking Robot Models on Contact-Rich Assembly](https://www.hud.ai/blog/assembly-benchmark)
-- Demonstration dataset (1355 episodes): [`hud-evals/AssemblyBench`](https://huggingface.co/datasets/hud-evals/AssemblyBench)
-- Reference checkpoints: [`pi05-AssemblyBench-12k`](https://huggingface.co/hud-evals/pi05-AssemblyBench-12k) (BC) · [`pi05-AssemblyBench-cgdagger-r3`](https://huggingface.co/hud-evals/pi05-AssemblyBench-cgdagger-r3) (final)
+- Blog post: [Benchmarking Robot Models on Contact-Rich Assembly](https://www.hud.ai/blog/assemble-benchmark)
+- Demonstration dataset (1355 episodes): [`hud-evals/AssembleBench`](https://huggingface.co/datasets/hud-evals/AssembleBench)
+- Reference checkpoints: [`pi05-AssembleBench-12k`](https://huggingface.co/hud-evals/pi05-AssembleBench-12k) (BC) · [`pi05-AssembleBench-cgdagger-r3`](https://huggingface.co/hud-evals/pi05-AssembleBench-cgdagger-r3) (final)
 
 ## Tasks
 
@@ -34,7 +34,7 @@ plumbing works, not part of the benchmark.
 ### pi0.5 successes (one per suite)
 
 Front-camera rollouts from the full-suite eval of
-[`pi05-AssemblyBench-12k`](https://huggingface.co/hud-evals/pi05-AssemblyBench-12k),
+[`pi05-AssembleBench-12k`](https://huggingface.co/hud-evals/pi05-AssembleBench-12k),
 sped up 5×:
 
 <p align="center">
@@ -154,7 +154,7 @@ cd submodules/IsaacLab-Arena
 OMNI_KIT_ACCEPT_EULA=YES python isaaclab_arena/evaluation/policy_runner.py \
     --policy_type zero_action --num_episodes 1 --headless \
     --external_environment_class_path \
-    assembly_bench.environments.assembly.assembly:AssemblyBenchEnvironment \
+    assembly_bench.environments.assembly.assembly:AssembleBenchEnvironment \
     assembly_bench --task peg_round_8mm
 ```
 
@@ -216,7 +216,7 @@ First run downloads ~9 GB of weights.
 | `--task` | `peg_round_16mm` | any task id from the table above, or `debug` |
 | `--num-envs` | `4` | parallel episodes in one sim process |
 | `--waves` | `1` | sequential batches (`15 × 2` = the writeup's 30-ep protocol) |
-| `--checkpoint` | `hud-evals/pi05-AssemblyBench-cgdagger-r3` | HF repo id or local dir |
+| `--checkpoint` | `hud-evals/pi05-AssembleBench-cgdagger-r3` | HF repo id or local dir |
 | `--runtime` | `tcp://127.0.0.1:8765` | where the env is serving |
 
 **3. Stream traces (optional)**

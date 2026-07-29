@@ -1,4 +1,4 @@
-"""HUD environment for the assembly benchmark — declarative, one file.
+"""HUD environment for the AssembleBench — declarative, one file.
 
 The gym capability, contract, and serving are derived by `env.gym(...)`;
 this file declares the sim, and the sim child process runs it. Serve

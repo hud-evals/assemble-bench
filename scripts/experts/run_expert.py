@@ -42,7 +42,7 @@ with SimulationAppContext(args_cli):
     import hud
     import warp as wp
     from isaaclab_arena.environments.arena_env_builder import ArenaEnvBuilder
-    from assembly_bench.environments.assembly.assembly import AssemblyBenchEnvironment
+    from assembly_bench.environments.assembly.assembly import AssembleBenchEnvironment
     from assembly_bench.environments.assembly.variants import VARIANTS
 
     from experts import gear, nut, peg
@@ -67,7 +67,7 @@ with SimulationAppContext(args_cli):
                 pass
             return obs, rew, term, trunc, info
 
-    AssemblyBenchEnvironment.add_cli_args(parser)
+    AssembleBenchEnvironment.add_cli_args(parser)
     parser.add_argument("--max_steps", type=int, default=None,
                         help="control steps per wave (default: task episode length at 15 Hz)")
     parser.add_argument("--episode_length_s", type=float, default=None,
@@ -134,7 +134,7 @@ with SimulationAppContext(args_cli):
         f"{args_cli.reset_rt_subframes}",
         flush=True,
     )
-    arena_env = AssemblyBenchEnvironment().get_env(args_cli)
+    arena_env = AssembleBenchEnvironment().get_env(args_cli)
     if args_cli.episode_length_s is not None:
         arena_env.task.episode_length_s = args_cli.episode_length_s
         print(f"[expert] episode timeout: {args_cli.episode_length_s:g}s", flush=True)

@@ -54,6 +54,6 @@ Single-task check straight through Isaac Sim, no HUD involved:
 python isaaclab_arena/evaluation/policy_runner.py \
     --policy_type zero_action --num_episodes 1 \
     --external_environment_class_path \
-    assembly_bench.environments.assembly.assembly:AssemblyBenchEnvironment \
+    assembly_bench.environments.assembly.assembly:AssembleBenchEnvironment \
     assembly_bench --task peg_round_8mm
 ```

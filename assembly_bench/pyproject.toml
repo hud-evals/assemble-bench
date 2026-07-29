@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "assembly-bench"
 version = "0.1.0"
-description = "NIST-taskboard assembly benchmark on Isaac Lab Arena"
+description = "NIST-taskboard AssembleBench on Isaac Lab Arena"
 requires-python = ">=3.10"
 # isaaclab_arena is installed separately from submodules/IsaacLab-Arena (see README).
 

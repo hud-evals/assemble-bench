@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install Assembly Bench + Isaac Lab Arena into the *currently active* Isaac Sim
+# Install AssembleBench + Isaac Lab Arena into the *currently active* Isaac Sim
 # Python. Activate that env first (conda, NGC container, or kit's python.sh).
 # Runs exactly the manual steps from the README's "Host Isaac Sim" section,
 # plus the submodule fetch (HTTPS rewrite + LFS skip).
@@ -133,7 +133,7 @@ Quick smoke (Path A):
   OMNI_KIT_ACCEPT_EULA=YES ${PY[*]} isaaclab_arena/evaluation/policy_runner.py \\
       --policy_type zero_action --num_episodes 1 --headless \\
       --external_environment_class_path \\
-      assembly_bench.environments.assembly.assembly:AssemblyBenchEnvironment \\
+      assembly_bench.environments.assembly.assembly:AssembleBenchEnvironment \\
       assembly_bench --task peg_round_8mm
 
 Or:  OMNI_KIT_ACCEPT_EULA=YES ${PY[*]} scripts/preview_assembly.py --task peg_round_8mm --out /tmp/peg

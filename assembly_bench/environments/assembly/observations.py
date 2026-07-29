@@ -1,4 +1,4 @@
-"""Extra policy observations for the assembly benchmark.
+"""Extra policy observations for the AssembleBench.
 
 Mirrors the DROID embodiment's observation helpers (isaaclab_arena
 embodiments/droid/observations.py): env-local reads off the articulation,

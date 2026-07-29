@@ -1,4 +1,4 @@
-"""NIST assembly benchmark environment for Isaac Lab Arena (externally defined).
+"""NIST AssembleBench environment for Isaac Lab Arena (externally defined).
 
 A Franka faces the NIST-taskboard workspace on the ``table`` background, with
 one of 14 benchmark variants (peg insert / gear mesh / nut thread), plus a
@@ -7,7 +7,7 @@ one of 14 benchmark variants (peg insert / gear mesh / nut thread), plus a
     python isaaclab_arena/evaluation/policy_runner.py \\
         --policy_type zero_action --num_episodes 1 \\
         --external_environment_class_path \\
-        assembly_bench.environments.assembly.assembly:AssemblyBenchEnvironment \\
+        assembly_bench.environments.assembly.assembly:AssembleBenchEnvironment \\
         assembly_bench --task peg_round_8mm
 """
 
@@ -56,7 +56,7 @@ def assembly_bench_env_cfg_callback(env_cfg):
     return env_cfg
 
 
-class AssemblyBenchEnvironment(ExampleEnvironmentBase):
+class AssembleBenchEnvironment(ExampleEnvironmentBase):
 
     name: str = "assembly_bench"
 
@@ -93,7 +93,7 @@ class AssemblyBenchEnvironment(ExampleEnvironmentBase):
         embodiment = self.asset_registry.get_asset_by_name(args_cli.embodiment)(
             enable_cameras=args_cli.enable_cameras,
         )
-        # The assembly benchmark's DROID contact-stability tuning (softened
+        # The AssembleBench's DROID contact-stability tuning (softened
         # Robotiq mimic overlay + solver/PD) lives in the registered
         # `droid_abs_joint_pos_softmimic` embodiment (see embodiments.py), the
         # default below -- no imperative USD authoring in the build path. The
@@ -212,12 +212,12 @@ def make_assembly_env(
     carb.settings.get_settings().set_int("/omni/replicator/globalSeed", 42)
 
     parser = get_isaaclab_arena_cli_parser()
-    AssemblyBenchEnvironment.add_cli_args(parser)
+    AssembleBenchEnvironment.add_cli_args(parser)
     args, _ = parser.parse_known_args([])
     args.task, args.embodiment, args.hdr = task, embodiment, hdr
     args.light_intensity, args.enable_cameras = light_intensity, True
     args.num_envs = num_envs
     args.reward = reward
-    arena_env = AssemblyBenchEnvironment().get_env(args)
+    arena_env = AssembleBenchEnvironment().get_env(args)
     builder_cfg = arena_env_builder_cfg_from_argparse(args)
     return ArenaEnvBuilder(arena_env, builder_cfg).make_registered(render_mode="rgb_array")

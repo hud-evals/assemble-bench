@@ -2,7 +2,7 @@
 
     conda run -n vla python scripts/experts/util/push_lerobot.py \
         --root data/lerobot/assembly_bench_2 \
-        --repo_id hud-evals/AssemblyBench
+        --repo_id hud-evals/AssembleBench
 """
 
 import argparse
@@ -20,7 +20,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.a
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--root", default=os.path.join(ROOT, "data", "lerobot", "assembly_bench_2"))
-parser.add_argument("--repo_id", default="hud-evals/AssemblyBench")
+parser.add_argument("--repo_id", default="hud-evals/AssembleBench")
 args = parser.parse_args()
 
 out_root = os.path.abspath(args.root)
