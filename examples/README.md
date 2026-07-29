@@ -10,8 +10,8 @@ starting point for your own agent.
 ## Setup
 
 The agent and the simulator are separate processes that talk over TCP, so they need
-separate environments – and can live on separate machines. From the repo root, in any
-Python 3.10+ environment (not Isaac):
+separate environments – and can live on separate machines. From the repo root, in a
+Python 3.12+ environment (not Isaac; `lerobot==0.6.0` will not install on 3.10):
 
 ```bash
 ./scripts/setup_agent.sh
