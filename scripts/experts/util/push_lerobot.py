@@ -1,7 +1,7 @@
 """Push an already-converted local LeRobot dataset to the Hub (skip .cache/).
 
     conda run -n vla python scripts/experts/util/push_lerobot.py \
-        --root data/lerobot/assembly_bench_2 \
+        --root data/lerobot/assemble_bench \
         --repo_id hud-evals/AssembleBench
 """
 
@@ -19,7 +19,7 @@ from huggingface_hub import HfApi
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--root", default=os.path.join(ROOT, "data", "lerobot", "assembly_bench_2"))
+parser.add_argument("--root", default=os.path.join(ROOT, "data", "lerobot", "assemble_bench"))
 parser.add_argument("--repo_id", default="hud-evals/AssembleBench")
 args = parser.parse_args()
 

@@ -11,7 +11,7 @@ Build from the **assembly_bench repo root** (no sibling repos needed):
 
 ```bash
 ./scripts/setup_sim.sh --submodules-only   # Arena + IsaacLab over HTTPS (no SSH keys)
-docker build -f docker/Dockerfile -t hud-assembly-env .
+docker build -f docker/Dockerfile -t assemble-bench-env .
 ```
 
 Needs an NVIDIA NGC login to pull the Isaac Sim base image
@@ -31,7 +31,7 @@ so restarts are ~1–2 minutes:
 ```bash
 mkdir -p ~/.cache/isaac/{kit,ov,glcache,computecache,warp,logs}
 
-docker run -d --name assembly-env --gpus all \
+docker run -d --name assemble-bench --gpus all \
   -e NVIDIA_DRIVER_CAPABILITIES=all \
   -e OMNI_KIT_ACCEPT_EULA=YES \
   -p 127.0.0.1:8765:8765 \
@@ -41,13 +41,13 @@ docker run -d --name assembly-env --gpus all \
   -v ~/.cache/isaac/computecache:/root/.nv/ComputeCache \
   -v ~/.cache/isaac/warp:/root/.cache/warp \
   -v ~/.cache/isaac/logs:/root/.nvidia-omniverse/logs \
-  hud-assembly-env
+  assemble-bench-env
 ```
 
 Watch for ready:
 
 ```bash
-docker logs -f assembly-env   # wait for HUD_SERVE_PORT=8765
+docker logs -f assemble-bench   # wait for HUD_SERVE_PORT=8765
 ```
 
 If the first boot times out before that line appears, restart the container —
@@ -71,7 +71,7 @@ is installed against kit's Python at `/isaac-sim/python.sh`; Arena lives at `/wo
 
 ```bash
 docker run --rm --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all -e OMNI_KIT_ACCEPT_EULA=YES \
-  hud-assembly-env /isaac-sim/python.sh \
+  assemble-bench-env /isaac-sim/python.sh \
     /workspace/isaaclab_arena/evaluation/policy_runner.py \
     --policy_type zero_action --num_episodes 1 --headless \
     --external_environment_class_path \

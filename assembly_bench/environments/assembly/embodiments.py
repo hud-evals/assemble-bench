@@ -1,7 +1,7 @@
 """Assembly-tuned DROID embodiment for Isaac Lab Arena.
 
 Registers ``droid_abs_joint_pos_softmimic``: the stock Arena DROID absolute-
-joint-position embodiment plus the AssembleBench's contact-stability
+joint-position embodiment plus the benchmark's contact-stability
 tuning, authored ONCE at construction instead of mutated imperatively inside
 ``AssembleBenchEnvironment.get_env`` on every env build.
 
@@ -96,7 +96,7 @@ def _softened_mimic_overlay(source_usd_path: str) -> str:
 
 
 def apply_assembly_droid_tuning(embodiment: Any) -> None:
-    """Apply the AssembleBench's contact-stability tuning to a DROID
+    """Apply the benchmark's contact-stability tuning to a DROID
     embodiment in place: softened-mimic spawn overlay, solver-iteration
     headroom, a compliant arm, and joint velocity in the policy observation.
 
@@ -147,7 +147,7 @@ def apply_assembly_droid_tuning(embodiment: Any) -> None:
 
 @register_asset
 class DroidAbsoluteJointPositionSoftMimicEmbodiment(DroidAbsoluteJointPositionEmbodiment):
-    """DROID absolute-joint-position embodiment with the AssembleBench's
+    """DROID absolute-joint-position embodiment with the benchmark's
     contact-stability tuning baked in (softened Robotiq mimic + solver/PD).
 
     This is the benchmark's default embodiment; the pi0.5-DROID contract (8-D

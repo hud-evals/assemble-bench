@@ -1,4 +1,4 @@
-"""Arena-registered assets for the NIST AssembleBench.
+"""Arena-registered assets for the NIST assembly benchmark.
 
 Registers every part the variants reference, under an ``asm_`` prefix so the
 names never collide with Arena's own library. Benchmark USDs live in

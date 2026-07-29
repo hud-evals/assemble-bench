@@ -1,6 +1,6 @@
 """Convert recorded expert HDF5s into ONE multi-task LeRobot v3.0 dataset.
 
-The ``assembly_bench_data`` dataset: action = the native DROID 8-D joint-position
+The AssembleBench dataset: action = the native DROID 8-D joint-position
 command (7 absolute arm joint targets + binary gripper) the IK expert emitted;
 state = [joint_pos(7), gripper_pos(1)] -- the exact pi0.5-DROID contract --
 plus joint_vel(7), eef_pos(3, base frame) and eef_quat(4, world wxyz) as separate

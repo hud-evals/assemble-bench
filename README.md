@@ -91,7 +91,7 @@ cd assemble-bench
 ### Option 1 - Docker (recommended)
 
 ```bash
-docker build -f docker/Dockerfile -t hud-assembly-env .
+docker build -f docker/Dockerfile -t assemble-bench-env .
 ```
 
 See [`docker/docker.md`](docker/docker.md) for serving Path B, running Path A inside the
@@ -167,9 +167,9 @@ Serve the environment once, then attach a policy over TCP.
 Docker (details in [`docker/docker.md`](docker/docker.md)):
 
 ```bash
-docker run -d --name assembly-env --gpus all \
+docker run -d --name assemble-bench --gpus all \
   -e NVIDIA_DRIVER_CAPABILITIES=all -e OMNI_KIT_ACCEPT_EULA=YES \
-  -p 127.0.0.1:8765:8765 hud-assembly-env
+  -p 127.0.0.1:8765:8765 assemble-bench-env
 ```
 
 Or host Isaac (Install Option 2):
@@ -182,6 +182,7 @@ Wait for `HUD_SERVE_PORT=8765` in the logs (first boot can take 5-15 minutes).
 
 **2. Run a VLA**
 
+In the agent env (`./scripts/setup_agent.sh`, or see [`examples/README.md`](examples/README.md)).
 DROID wire: front + wrist RGB at 640×360, joint positions, 8-D action at 15 Hz.
 [`examples/`](examples/) loads the final pi0.5 checkpoint:
 

@@ -1,14 +1,14 @@
-# Assembly Bench env server — Docker backend for the HUD SDK.
+# AssembleBench env server — Docker backend for the HUD SDK.
 #
 # Self-contained: Isaac Sim base + Isaac Lab (Arena's pin) + Arena + hud (PyPI)
-# + this bench. Build from the *assembly_bench repo root*:
+# + this bench. Build from the *assemble-bench repo root*:
 #
 #   git submodule update --init --recursive   # or ./scripts/setup_sim.sh (host)
-#   docker build -f docker/Dockerfile -t hud-assembly-env .
+#   docker build -f docker/Dockerfile -t assemble-bench-env .
 #
 # GPU REQUIRED — Isaac renders with RTX. Run with:
 #   docker run --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all \
-#     -e OMNI_KIT_ACCEPT_EULA=YES -p 8765:8765 hud-assembly-env
+#     -e OMNI_KIT_ACCEPT_EULA=YES -p 8765:8765 assemble-bench-env
 
 ARG BASE_IMAGE=nvcr.io/nvidia/isaac-sim:6.0.0-dev2
 FROM ${BASE_IMAGE}

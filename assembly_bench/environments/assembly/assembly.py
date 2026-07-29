@@ -1,4 +1,4 @@
-"""NIST AssembleBench environment for Isaac Lab Arena (externally defined).
+"""NIST assembly benchmark environment for Isaac Lab Arena (externally defined).
 
 A Franka faces the NIST-taskboard workspace on the ``table`` background, with
 one of 14 benchmark variants (peg insert / gear mesh / nut thread), plus a
@@ -93,7 +93,7 @@ class AssembleBenchEnvironment(ExampleEnvironmentBase):
         embodiment = self.asset_registry.get_asset_by_name(args_cli.embodiment)(
             enable_cameras=args_cli.enable_cameras,
         )
-        # The AssembleBench's DROID contact-stability tuning (softened
+        # The benchmark's DROID contact-stability tuning (softened
         # Robotiq mimic overlay + solver/PD) lives in the registered
         # `droid_abs_joint_pos_softmimic` embodiment (see embodiments.py), the
         # default below -- no imperative USD authoring in the build path. The
