@@ -78,8 +78,6 @@ on 22.04) before creating the agent venv.
 
 ### Tested versions
 
-Everything below is pinned – nothing to guess or resolve by hand:
-
 | Component | Pinned at | Where the pin lives |
 |---|---|---|
 | Isaac Sim (Docker base) | `nvcr.io/nvidia/isaac-sim:6.0.0-dev2` | [`docker/Dockerfile`](docker/Dockerfile) |
@@ -95,8 +93,8 @@ Clone, then fetch the pinned Arena/IsaacLab submodules. Use the script rather th
 them to HTTPS, so no SSH keys needed) and skips Arena's docs-only LFS media:
 
 ```bash
-git clone https://github.com/hud-evals/assembly_bench.git
-cd assembly_bench
+git clone https://github.com/hud-evals/assemble-bench.git
+cd assemble-bench
 ./scripts/setup_sim.sh --submodules-only
 ```
 
@@ -139,22 +137,6 @@ pip install --no-deps "av>=12" "openpi-client==0.1.2"
 
 `./scripts/setup_sim.sh` runs exactly these steps (plus the submodule fetch above).
 Arena stays unmodified; this repo plugs in through its registration API.
-
-### Agent environment (Path B only)
-
-In a **separate**, normal Python **3.12+** env – not the Isaac one:
-
-```bash
-python3.12 -m venv .venv-agent && source .venv-agent/bin/activate
-pip install -r requirements-agent.txt
-pip install --no-deps openpi-client==0.1.2   # pins numpy<2; only its msgpack codec is used
-hf auth login                                # after accepting the PaliGemma gate above
-```
-
-`./scripts/setup_agent.sh` runs the two pip installs. To reproduce the exact tested
-environment instead: `pip install --no-deps -r requirements-agent.lock` (then still
-install the `hud` git pin from [`requirements-agent.txt`](requirements-agent.txt) if
-the lock install skipped VCS lines).
 
 ## Running the benchmark
 
@@ -217,7 +199,7 @@ OMNI_KIT_ACCEPT_EULA=YES python -m hud.environment.server env.py --port 8765
 
 Wait for `HUD_SERVE_PORT=8765` in the logs (first boot can take 5–15 minutes).
 
-**2. Run a VLA** (the agent environment from Install)
+**2. Run a VLA**
 
 The wire is DROID: front + wrist RGB at 640×360, joint positions, 8-D action (7 joint
 targets + binary gripper) at 15 Hz. [`examples/`](examples/) loads our final pi0.5
