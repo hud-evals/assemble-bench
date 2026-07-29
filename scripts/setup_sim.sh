@@ -135,6 +135,4 @@ Quick smoke (Path A):
       --external_environment_class_path \\
       assemble_bench.environments.assembly.assembly:AssembleBenchEnvironment \\
       assemble_bench --task peg_round_8mm
-
-Or:  OMNI_KIT_ACCEPT_EULA=YES ${PY[*]} scripts/preview_assembly.py --task peg_round_8mm --out /tmp/peg
 EOF

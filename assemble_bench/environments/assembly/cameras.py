@@ -28,8 +28,7 @@ _SPAWN = dict(focal_length=2.8, focus_distance=28.0,
 
 # Frontal exterior view (LIBERO agentview convention): close in front of the
 # workspace on the robot midline, low enough that the parts read as 3D shapes,
-# with the arm entering from the far side. (Framing picked from a rendered
-# candidate sweep; see scripts/preview_assembly.py to re-render.)
+# with the arm entering from the far side.
 FRONT_CAM_EYE = (0.55, 0.0, 0.30)
 FRONT_CAM_TARGET = (0.37, 0.0, 0.03)
 

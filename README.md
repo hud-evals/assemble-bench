@@ -149,14 +149,8 @@ OMNI_KIT_ACCEPT_EULA=YES python isaaclab_arena/evaluation/policy_runner.py \
 | `--hdr` | `asm_machine_shop` | any Arena HDR name, or `none` |
 | `--num_envs` | `1` | parallel envs on one GPU |
 
-Or render stills of both policy cameras:
-
-```bash
-OMNI_KIT_ACCEPT_EULA=YES python scripts/preview_assembly.py --task peg_round_8mm --out /tmp/peg
-# → /tmp/peg_front.png, /tmp/peg_wrist.png  (log should say COLOR OK)
-```
-
-Both also run inside the Docker image - see [`docker/docker.md`](docker/docker.md).
+The same Path A command also runs inside the Docker image - see
+[`docker/docker.md`](docker/docker.md).
 
 ### Path B - HUD
 
@@ -216,7 +210,7 @@ python examples/run_eval.py --task peg_round_16mm --num-envs 4
 
 | Check | Command | Expect |
 |---|---|---|
-| Quick (Path A, no weights) | `python scripts/preview_assembly.py --task peg_round_8mm --out /tmp/peg` | two PNGs, `COLOR OK` |
+| Quick (Path A, no weights) | zero-action `policy_runner` above (`--task peg_round_8mm`) | scene builds; episode completes |
 | Full (Path B + pi0.5) | serve env, then `python examples/run_eval.py --task peg_round_16mm --num-envs 2` | episodes grade; optional job URL if `HUD_API_KEY` is set |
 
 ## Additional information
