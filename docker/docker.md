@@ -7,7 +7,7 @@ the robot WebSocket rides the control channel's capability tunnel.
 
 ## Build
 
-Build from the **assemble_bench repo root** (no sibling repos needed):
+Build from the **assemble-bench repo root** (no sibling repos needed):
 
 ```bash
 ./scripts/setup_sim.sh --submodules-only   # Arena + IsaacLab over HTTPS (no SSH keys)

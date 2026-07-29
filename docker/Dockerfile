@@ -3,7 +3,7 @@
 # Self-contained: Isaac Sim base + Isaac Lab (Arena's pin) + Arena + hud (PyPI)
 # + this bench. Build from the *assemble-bench repo root*:
 #
-#   git submodule update --init --recursive   # or ./scripts/setup_sim.sh (host)
+#   ./scripts/setup_sim.sh --submodules-only   # Arena + IsaacLab over HTTPS
 #   docker build -f docker/Dockerfile -t assemble-bench-env .
 #
 # GPU REQUIRED — Isaac renders with RTX. Run with:
@@ -79,8 +79,11 @@ RUN ${ISAAC_PY} -m pip install --no-cache-dir --ignore-installed \
     && ${ISAAC_PY} -c "from hud.environment.robot import GymBridge; from hud.eval.runtime import Shared; print('hud robot stack OK')"
 
 # The bench: env server + the assemble_bench package (parts, HDRIs, variants).
+# scripts/ ships too: env.py imports experts.rl.takeover for CG-DAgger, and the
+# scripted experts load scripts/experts/{base,peg}.py by path at takeover time.
 COPY assemble_bench /app/assemble_bench/assemble_bench
 COPY agents /app/assemble_bench/agents
+COPY scripts /app/assemble_bench/scripts
 COPY env.py contract.json /app/assemble_bench/
 RUN ${ISAAC_PY} -m pip install --no-deps -e /app/assemble_bench/assemble_bench
 
