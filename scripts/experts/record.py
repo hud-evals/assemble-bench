@@ -9,9 +9,8 @@ default; ``keep_failures`` keeps every completed episode).
 **Recording convention (``sa_align="pre_step"``):** each row is
 ``(s_t, a_t, r_t)`` — observation *before* the action, action taken *from*
 that state, reward for the transition. Callers must pass pre-step ``obs`` into
-``step`` (see ``run_expert``). Matches online PLD / textbook Q(s, a). Legacy
-files without this tag stored post-step ``(s_{t+1}, a_t, r_t)``; loaders use
-``inventory.recording.sa_align`` to recover.
+``step`` (see ``run_expert``). Matches online PLD / textbook Q(s, a). Every
+episode carries the tag, so loaders can trust the ordering without probing.
 """
 
 import os
