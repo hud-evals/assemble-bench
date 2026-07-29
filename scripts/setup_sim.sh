@@ -1,24 +1,23 @@
 #!/usr/bin/env bash
 # Install Assembly Bench + Isaac Lab Arena into the *currently active* Isaac Sim
 # Python. Activate that env first (conda, NGC container, or kit's python.sh).
+# Runs exactly the manual steps from the README's "Host Isaac Sim" section,
+# plus the submodule fetch (HTTPS rewrite + LFS skip).
 #
 #   export OMNI_KIT_ACCEPT_EULA=YES
-#   ./scripts/setup_sim.sh                 # submodules + pip into Isaac Python
-#   ./scripts/setup_sim.sh --with-hud      # also install hud-python (Path B)
+#   ./scripts/setup_sim.sh                     # submodules + pip into Isaac Python
 #   ./scripts/setup_sim.sh --submodules-only   # just fetch Arena/IsaacLab (e.g. before docker build)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-WITH_HUD=0
 SUBMODULES_ONLY=0
 for arg in "$@"; do
   case "$arg" in
-    --with-hud) WITH_HUD=1 ;;
     --submodules-only) SUBMODULES_ONLY=1 ;;
     -h|--help)
-      sed -n '2,10p' "$0"
+      sed -n '2,9p' "$0"
       exit 0
       ;;
     *)
@@ -85,7 +84,8 @@ if ! ${PY[@]} -c "import isaacsim" 2>/dev/null; then
 [setup] ERROR: this Python cannot import isaacsim.
 
 Install Isaac Sim 6.x first, then re-run this script *inside* that environment:
-  - NGC container:  nvcr.io/nvidia/isaac-sim:6.0.0  (uses /isaac-sim/python.sh automatically)
+  - NGC container:  nvcr.io/nvidia/isaac-sim:6.0.0-dev2  (the tag docker/Dockerfile builds on;
+                    uses /isaac-sim/python.sh automatically)
   - Local install:  https://docs.isaacsim.omniverse.nvidia.com/current/installation/download.html
 
 Also set:  export OMNI_KIT_ACCEPT_EULA=YES
@@ -109,14 +109,17 @@ done
 
 echo "[setup] installing Isaac Lab Arena…"
 ${PY[@]} -m pip install -e submodules/IsaacLab-Arena
+# Arena's registries import these at registration time but don't declare them
+# (same pins as docker/Dockerfile).
+${PY[@]} -m pip install "pin-pink==3.1.0" "rsl-rl-lib==5.0.1"
 
 echo "[setup] installing assembly_bench…"
 ${PY[@]} -m pip install -e assembly_bench
 
-if [[ "$WITH_HUD" -eq 1 ]]; then
-  echo "[setup] installing hud-python (Path B)…"
-  ${PY[@]} -m pip install "hud-python>=0.6.10"
-fi
+echo "[setup] installing HUD serving stack (Path B)…"
+${PY[@]} -m pip install "hud==0.6.10" msgpack
+# openpi-client pins numpy<2 but only its msgpack codec is used; av just for wheels.
+${PY[@]} -m pip install --no-deps "av>=12" "openpi-client==0.1.2"
 
 cat <<EOF
 

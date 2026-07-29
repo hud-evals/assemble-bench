@@ -1,13 +1,19 @@
-# Agent-side deps for Path B (examples/run_eval.py).
+# Agent-side deps for Path B (examples/run_eval.py) — exact tested versions.
 # Install into a normal Python 3.10+ env — NOT the Isaac Sim environment.
 # The simulator and the policy talk over TCP and can live on different machines.
+#
+#   pip install -r requirements-agent.txt
+#   pip install --no-deps openpi-client==0.1.2
+#
+# openpi-client is a separate --no-deps step: it pins numpy<2 but only its
+# msgpack codec is used, and lerobot needs numpy 2.x.
+# Byte-for-byte reproduction of the tested env: requirements-agent.lock.
 
-torch>=2.6
-lerobot[pi]>=0.6.0
-hud-python>=0.6.10
+torch==2.11.0
+lerobot[pi]==0.6.0
+hud==0.6.10        # the HUD SDK — renamed on PyPI, was hud-python
 
 # Robot capability wire. Missing these fails late: without `av` a rollout dies
 # mid-run; without openpi-client/msgpack the agent errors at import.
-av
-msgpack
-openpi-client>=0.1.2
+av==18.0.0
+msgpack==1.2.1

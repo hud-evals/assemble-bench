@@ -14,7 +14,10 @@ separate environments – and can live on separate machines. From the repo root,
 Python 3.10+ environment (not Isaac):
 
 ```bash
-./scripts/setup_agent.sh        # or: pip install -r requirements-agent.txt
+./scripts/setup_agent.sh
+# or the two commands it wraps:
+#   pip install -r requirements-agent.txt
+#   pip install --no-deps openpi-client==0.1.2
 ```
 
 The pi0.5 tokenizer is gated even though the checkpoints are public, so accept

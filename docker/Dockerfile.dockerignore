@@ -1,14 +1,14 @@
-# BuildKit per-Dockerfile ignore: the context is the workspace root; the image
-# needs the bench tree, hud-python, and the Arena checkout (minus its heavy
-# dev submodules — Isaac Lab itself IS needed).
+# BuildKit per-Dockerfile ignore: the context is the assembly_bench repo root.
+# The image needs the bench package, the HUD entry point, and the Arena checkout
+# (minus its heavy dev submodules — Isaac Lab itself IS needed).
 *
 !assembly_bench
-!hud-python
-!assembly_bench/submodules/IsaacLab-Arena
-assembly_bench/eval
-assembly_bench/submodules/IsaacLab-Arena/submodules/Isaac-GR00T
-assembly_bench/submodules/IsaacLab-Arena/docs
+!agents
+!env.py
+!contract.json
+!submodules/IsaacLab-Arena
+submodules/IsaacLab-Arena/submodules/Isaac-GR00T
+submodules/IsaacLab-Arena/docs
 **/__pycache__
 **/.git
 **/.venv
-hud-python/docs

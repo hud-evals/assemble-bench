@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Install Path B *agent-side* deps into a normal Python 3.10+ env (not Isaac).
-# The agent talks to the served env over TCP.
+# The agent talks to the served env over TCP. Runs exactly the two pip
+# commands from the README:
 #
-#   ./scripts/setup_agent.sh
+#   pip install -r requirements-agent.txt
+#   pip install --no-deps openpi-client==0.1.2
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -19,6 +21,8 @@ fi
 echo "[setup-agent] python: $(${PY[@]} -c 'import sys; print(sys.executable)')"
 ${PY[@]} -m pip install -U pip
 ${PY[@]} -m pip install -r requirements-agent.txt
+# openpi-client pins numpy<2 but only its msgpack codec is used — keep numpy 2.x.
+${PY[@]} -m pip install --no-deps "openpi-client==0.1.2"
 
 cat <<'EOF'
 

@@ -36,45 +36,95 @@ plumbing works, not part of the benchmark.
 - NVIDIA GPU with RT cores – 16 GB+ for the simulator, 24 GB+ if a VLA shares the same GPU
   (datacenter cards without RT cores, such as A100 and H100, cannot render)
 - Ubuntu 22.04+ (Isaac Sim 6 needs GLIBC >= 2.35)
-- [Isaac Sim 6.x](https://docs.isaacsim.omniverse.nvidia.com/current/installation/download.html)
-  (NGC image `nvcr.io/nvidia/isaac-sim:6.0.0` or a local install)
-- `export OMNI_KIT_ACCEPT_EULA=YES` in every shell that launches Isaac
+
+Then, per install option below:
+
+- **Docker (recommended):** Docker with the NVIDIA container toolkit, and an
+  [NGC](https://ngc.nvidia.com) account to pull the Isaac Sim base image
+  (`docker login nvcr.io`). No Isaac Sim on the host.
+- **Host Isaac Sim:** [Isaac Sim 6.x](https://docs.isaacsim.omniverse.nvidia.com/current/installation/download.html)
+  installed, and `export OMNI_KIT_ACCEPT_EULA=YES` in every shell that launches Isaac.
 
 Path B's agent side also needs a normal Python 3.10+ env (separate from Isaac) and a
 Hugging Face login that has accepted
 [`google/paligemma-3b-pt-224`](https://huggingface.co/google/paligemma-3b-pt-224)
 (the pi0.5 tokenizer is gated; the checkpoints themselves are public).
 
+### Tested versions
+
+Everything below is pinned – nothing to guess or resolve by hand:
+
+| Component | Pinned at | Where the pin lives |
+|---|---|---|
+| Isaac Sim (Docker base) | `nvcr.io/nvidia/isaac-sim:6.0.0-dev2` | [`docker/Dockerfile`](docker/Dockerfile) |
+| Isaac Sim (host install) | pip `isaacsim[all,extscache]==6.0.0.1` | – |
+| Isaac Lab + Isaac Lab Arena | exact commits | git submodules (`git submodule status --recursive`) |
+| `hud` (the HUD SDK; renamed on PyPI from `hud-python`) | `0.6.10` | setup scripts + Dockerfile |
+| Agent env – torch `2.11.0`, lerobot `0.6.0`, … | full freeze | [`requirements-agent.lock`](requirements-agent.lock) |
+
 ## Install
+
+Clone, then fetch the pinned Arena/IsaacLab submodules. Use the script rather than
+`git clone --recursive`: Arena pins nested `git@github.com:` remotes (the script rewrites
+them to HTTPS, so no SSH keys needed) and skips Arena's docs-only LFS media:
 
 ```bash
 git clone https://github.com/hud-evals/assembly_bench.git
 cd assembly_bench
-
-# Inside your Isaac Sim environment (conda env, NGC container, or /isaac-sim/python.sh):
-export OMNI_KIT_ACCEPT_EULA=YES
-./scripts/setup_sim.sh              # fetch Arena/IsaacLab + pip-install into Isaac Python
-./scripts/setup_sim.sh --with-hud   # same, plus hud-python for Path B
-```
-
-`setup_sim.sh` fetches the [Isaac Lab Arena](https://github.com/isaac-sim/IsaacLab-Arena)
-submodule and its pinned IsaacLab over **HTTPS** (no GitHub SSH keys needed), installs
-both editable, then installs `assembly_bench`. Arena stays unmodified; this repo plugs in
-through its registration API.
-
-For Path B's VLA agent, in a **separate** Python 3.10+ environment:
-
-```bash
-./scripts/setup_agent.sh            # lerobot, hud-python, torch, …
-hf auth login                       # after accepting the PaliGemma gate above
-```
-
-No Isaac Sim on the host? Fetch the submodules, then serve via Docker:
-
-```bash
 ./scripts/setup_sim.sh --submodules-only
-# then follow docker/docker.md
 ```
+
+### Option 1 – Docker (recommended)
+
+Self-contained and fully pinned: Isaac Sim base + Isaac Lab (Arena's pin) + Arena +
+hud + this bench, with nothing installed on the host.
+
+```bash
+docker build -f docker/Dockerfile -t hud-assembly-env .
+```
+
+[`docker/docker.md`](docker/docker.md) covers running it: serving Path B (the image's
+default command), running Path A commands inside the container, and the cache mounts
+that cut boots from ~15 min to ~2 min.
+
+### Option 2 – Host Isaac Sim
+
+For hacking on the environment itself, or Path A without a container. Inside your Isaac
+Sim environment (conda env, or an NGC container shell – there, replace `pip` with
+`/isaac-sim/python.sh -m pip`):
+
+```bash
+export OMNI_KIT_ACCEPT_EULA=YES
+
+# Isaac Lab at Arena's pinned commit (its deps ship with Isaac Sim):
+for d in submodules/IsaacLab-Arena/submodules/IsaacLab/source/isaaclab*/; do
+  pip install --no-deps -e "$d"
+done
+
+# Arena, plus two runtime deps its registries import but don't declare:
+pip install -e submodules/IsaacLab-Arena "pin-pink==3.1.0" "rsl-rl-lib==5.0.1"
+
+# This bench, and the HUD serving stack for Path B:
+pip install -e assembly_bench
+pip install "hud==0.6.10" msgpack
+pip install --no-deps "av>=12" "openpi-client==0.1.2"
+```
+
+`./scripts/setup_sim.sh` runs exactly these steps (plus the submodule fetch above).
+Arena stays unmodified; this repo plugs in through its registration API.
+
+### Agent environment (Path B only)
+
+In a **separate**, normal Python 3.10+ env – not the Isaac one:
+
+```bash
+pip install -r requirements-agent.txt
+pip install --no-deps openpi-client==0.1.2   # pins numpy<2; only its msgpack codec is used
+hf auth login                                # after accepting the PaliGemma gate above
+```
+
+`./scripts/setup_agent.sh` runs the two pip installs. To reproduce the exact tested
+environment instead: `pip install --no-deps -r requirements-agent.lock`.
 
 ## Running the benchmark
 
@@ -111,6 +161,9 @@ OMNI_KIT_ACCEPT_EULA=YES python scripts/preview_assembly.py --task peg_round_8mm
 # → /tmp/peg_front.png, /tmp/peg_wrist.png  (log should say COLOR OK)
 ```
 
+Both commands also run inside the Docker image (Install Option 1) – see
+[`docker/docker.md`](docker/docker.md).
+
 ### Path B – HUD
 
 Serve the environment once, then attach a policy over TCP. The simulator and the policy
@@ -118,25 +171,23 @@ can live in different environments (or on different machines).
 
 **1. Serve the env** (pick one)
 
-Host Isaac (after `./scripts/setup_sim.sh --with-hud`):
+Docker (Install Option 1; cache mounts and details in [`docker/docker.md`](docker/docker.md)):
 
 ```bash
-OMNI_KIT_ACCEPT_EULA=YES python -m hud.environment.server env.py --port 8765
-```
-
-Or Docker (no host Isaac install – build from this repo alone):
-
-```bash
-# details + cache mounts: docker/docker.md
-docker build -f docker/Dockerfile -t hud-assembly-env .
 docker run -d --name assembly-env --gpus all \
   -e NVIDIA_DRIVER_CAPABILITIES=all -e OMNI_KIT_ACCEPT_EULA=YES \
   -p 127.0.0.1:8765:8765 hud-assembly-env
 ```
 
+Or host Isaac (Install Option 2):
+
+```bash
+OMNI_KIT_ACCEPT_EULA=YES python -m hud.environment.server env.py --port 8765
+```
+
 Wait for `HUD_SERVE_PORT=8765` in the logs (first boot can take 5–15 minutes).
 
-**2. Run a VLA** (agent env from `./scripts/setup_agent.sh`)
+**2. Run a VLA** (the agent environment from Install)
 
 The wire is DROID: front + wrist RGB at 640×360, joint positions, 8-D action (7 joint
 targets + binary gripper) at 15 Hz. [`examples/`](examples/) loads our final pi0.5
@@ -184,9 +235,9 @@ Without the key, nothing is sent anywhere.
 
 ```
 assembly_bench/
-├── scripts/setup_sim.sh     install Arena + this package into Isaac Sim Python
-├── scripts/setup_agent.sh   install Path B VLA deps into a normal Python
-├── requirements-agent.txt   agent-side pip deps (Path B)
+├── scripts/setup_sim.sh     the Install "Host Isaac Sim" steps as one script
+├── scripts/setup_agent.sh   the Install "Agent environment" steps as one script
+├── requirements-agent.txt   agent-side pins (Path B); the .lock is the full tested freeze
 ├── assembly_bench/          the pip-installable Arena environment package
 │   ├── environments/assembly/   variants.py (the task catalog), scene, tasks, rewards
 │   └── assets/parts/            pegs, gears, nuts, NIST board

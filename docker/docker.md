@@ -17,8 +17,8 @@ docker build -f docker/Dockerfile -t hud-assembly-env .
 Needs an NVIDIA NGC login to pull the Isaac Sim base image
 (`docker login nvcr.io`).
 
-The image installs `hud-python` from PyPI into kit's Python (constraint-frozen so
-kit-owned packages are never upgraded).
+The image installs `hud` (the HUD SDK, formerly `hud-python`) from PyPI into kit's
+Python (constraint-frozen so kit-owned packages are never upgraded).
 
 ## Run
 
@@ -52,7 +52,7 @@ warm caches usually come up in under two minutes.
 
 ## Eval against it
 
-On the host (agent environment from `./scripts/setup_agent.sh`):
+On the host (agent environment from the README's Install section):
 
 ```bash
 python examples/run_eval.py --task peg_round_16mm --num-envs 4 \
@@ -60,3 +60,20 @@ python examples/run_eval.py --task peg_round_16mm --num-envs 4 \
 ```
 
 If you published a different host port, pass that in `--runtime`.
+
+## Path A inside the container
+
+The image can also run the sim directly (README Path A) instead of serving. Everything
+is installed against kit's Python at `/isaac-sim/python.sh`; Arena lives at `/workspace`:
+
+```bash
+docker run --rm --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all -e OMNI_KIT_ACCEPT_EULA=YES \
+  hud-assembly-env /isaac-sim/python.sh \
+    /workspace/isaaclab_arena/evaluation/policy_runner.py \
+    --policy_type zero_action --num_episodes 1 --headless \
+    --external_environment_class_path \
+    assembly_bench.environments.assembly.assembly:AssemblyBenchEnvironment \
+    assembly_bench --task peg_round_8mm
+```
+
+The same cache mounts as above apply (first run is a cold boot otherwise).

@@ -1,7 +1,7 @@
 # Assembly Bench env server — Docker backend for the HUD SDK.
 #
-# Self-contained: Isaac Sim base + Isaac Lab (Arena's pin) + Arena + hud-python
-# (PyPI) + this bench. Build from the *assembly_bench repo root*:
+# Self-contained: Isaac Sim base + Isaac Lab (Arena's pin) + Arena + hud (PyPI)
+# + this bench. Build from the *assembly_bench repo root*:
 #
 #   git submodule update --init --recursive   # or ./scripts/setup_sim.sh (host)
 #   docker build -f docker/Dockerfile -t hud-assembly-env .
@@ -54,12 +54,13 @@ COPY submodules/IsaacLab-Arena/isaaclab_arena_openpi /workspace/isaaclab_arena_o
 RUN ${ISAAC_PY} -m pip install --no-cache-dir "pin-pink==3.1.0" \
     && ${ISAAC_PY} -m pip install --no-cache-dir -e /workspace/
 
-# hud-python from PyPI. Kit's python dedupes shared packages as symlink farms
-# across its extension prebundles, and a naive upgrade deletes the files those
-# symlinks point at. So: shadow-install (--ignore-installed) the few packages
-# hud needs newer, then install hud against a constraints freeze of everything
-# else (pip can add, never upgrade/remove).
-ARG HUD_PYTHON_VERSION=0.6.10
+# The HUD SDK (`hud` on PyPI; formerly hud-python) from PyPI. Kit's python
+# dedupes shared packages as symlink farms across its extension prebundles, and
+# a naive upgrade deletes the files those symlinks point at. So: shadow-install
+# (--ignore-installed) the few packages hud needs newer, then install hud
+# against a constraints freeze of everything else (pip can add, never
+# upgrade/remove).
+ARG HUD_VERSION=0.6.10
 # openai is excluded from the freeze: kit ships a newer pin while hud wants 2.44,
 # and the env server never imports kit's openai path.
 RUN ${ISAAC_PY} -m pip install --no-cache-dir --ignore-installed \
@@ -69,9 +70,9 @@ RUN ${ISAAC_PY} -m pip install --no-cache-dir --ignore-installed \
         | grep -v -E "\+|@ file|prompt.toolkit|^(packaging|pydantic|pyperclip|uvicorn|websockets|openai)==" \
         > /tmp/kit-constraints.txt \
     && ${ISAAC_PY} -m pip install --no-cache-dir -c /tmp/kit-constraints.txt \
-        "hud-python==${HUD_PYTHON_VERSION}" msgpack \
-    && ${ISAAC_PY} -m pip install --no-cache-dir --no-deps "av>=12" \
-    && ${ISAAC_PY} -m pip install --no-cache-dir --no-deps "openpi-client>=0.1.2" \
+        "hud==${HUD_VERSION}" msgpack \
+    && ${ISAAC_PY} -m pip install --no-cache-dir --no-deps "av==18.0.0" \
+    && ${ISAAC_PY} -m pip install --no-cache-dir --no-deps "openpi-client==0.1.2" \
     && ${ISAAC_PY} -c "from openpi_client import msgpack_numpy; print('openpi/0 codec OK')"
 
 # The bench: env server + the assembly_bench package (parts, HDRIs, variants).
