@@ -31,6 +31,30 @@ poses are jittered every episode.
 A 15th task, `debug`, puts an apple in a bowl. It is a hello-world check that the
 plumbing works, not part of the benchmark.
 
+### pi0.5 successes (one per suite)
+
+Front-camera rollouts from the full-suite eval of
+[`pi05-AssemblyBench-12k`](https://huggingface.co/hud-evals/pi05-AssemblyBench-12k),
+sped up 5×:
+
+<p align="center">
+  <img src="docs/media/pi05_round_peg.gif" width="49%" alt="pi0.5 success – round peg insertion (peg_round_4mm)" />
+  <img src="docs/media/pi05_square_peg.gif" width="49%" alt="pi0.5 success – square peg insertion (peg_square_16mm)" />
+</p>
+<p align="center">
+  <img src="docs/media/pi05_gear.gif" width="49%" alt="pi0.5 success – gear meshing (gear_large)" />
+  <img src="docs/media/pi05_nut.gif" width="49%" alt="pi0.5 success – nut threading (nut_M16)" />
+</p>
+
+<p align="center">
+  <sub>
+    🟦 <code>peg_round_4mm</code> ·
+    🟪 <code>peg_square_16mm</code> ·
+    🟧 <code>gear_large</code> ·
+    🟩 <code>nut_M16</code>
+  </sub>
+</p>
+
 ## Requirements
 
 - NVIDIA GPU with RT cores – 16 GB+ for the simulator, 24 GB+ if a VLA shares the same GPU
@@ -250,6 +274,7 @@ assembly_bench/
 ├── examples/                pi0.5 VLA + eval runner
 ├── tasks/                   HUD run lists
 ├── docker/                  self-contained Isaac + HUD image (build from this repo)
+├── docs/media/              README collage GIFs (pi0.5 successes, one per suite)
 ├── env.py, contract.json    HUD entry point and its observation/action wire
 └── submodules/IsaacLab-Arena    unmodified Arena (git submodule)
 ```
