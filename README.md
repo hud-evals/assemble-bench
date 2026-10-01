@@ -226,7 +226,7 @@ HUD_API_KEY=... python examples/llm_assembly.py
 only if it passes. Task suites for the template are in [`tasks/llm/`](tasks/llm/pegs.json).
 
 **Known limitation:** on Modal (L40S, driver 580) Kit now finds the GPU through Vulkan, but
-Isaac Sim 6.0.x PhysX GPU fails to create its scene (CUDA error 700), so no episode steps yet.
+Isaac Sim 6.0.0.1 PhysX GPU fails to create its scene (CUDA error 700), so no episode steps yet.
 
 ## Test your install
 
