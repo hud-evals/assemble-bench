@@ -227,6 +227,88 @@ only if it passes. Task suites for the template are in [`tasks/llm/`](tasks/llm/
 
 **Known limitation:** on Modal (L40S, driver 580) Kit now finds the GPU through Vulkan, but
 Isaac Sim 6.0.0.1 PhysX GPU fails to create its scene (CUDA error 700), so no episode steps yet.
+Use a local GPU instead (next section).
+
+### Run on a local GPU
+
+The same `assembly_direct` episodes, served from a Docker container on your own machine and
+driven by `gpt-6-astra` over `tcp://127.0.0.1:8765`. No Modal. Not yet run end to end on
+bare metal; if the first episode fails, `docker logs assemble-bench` is the place to look.
+
+**Prerequisites**
+
+- NVIDIA GPU with RT cores and 16 GB+ VRAM (A100 / H100 cannot render), Ubuntu 22.04+
+- NVIDIA driver 580 or newer (`nvidia-smi`)
+- Docker with the [NVIDIA container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+  and `docker login nvcr.io` (NGC) for the Isaac Sim 6 base image. The image bundles Isaac
+  Sim 6, Isaac Lab, and Arena, so nothing is installed on the host.
+- [`uv`](https://docs.astral.sh/uv/) and a `HUD_API_KEY` (Astra is a HUD gateway model; each
+  episode is also uploaded to hud.ai)
+
+**1. Build and check**
+
+```bash
+git clone https://github.com/hud-evals/assemble-bench.git && cd assemble-bench
+./scripts/setup_sim.sh --submodules-only
+docker build -f docker/Dockerfile -t assemble-bench-env .
+./scripts/check_local_gpu.sh        # driver, VRAM, Docker GPU access, image present
+```
+
+**2. Serve the env** (cache mounts make restarts ~2 min instead of ~15; see
+[`docker/docker.md`](docker/docker.md))
+
+```bash
+mkdir -p ~/.cache/isaac/{kit,ov,glcache,computecache,warp,logs}
+docker run -d --name assemble-bench --gpus all \
+  -e NVIDIA_DRIVER_CAPABILITIES=all -e OMNI_KIT_ACCEPT_EULA=YES \
+  -p 127.0.0.1:8765:8765 \
+  -v ~/.cache/isaac/kit:/isaac-sim/kit/cache \
+  -v ~/.cache/isaac/ov:/root/.cache/ov \
+  -v ~/.cache/isaac/glcache:/root/.cache/nvidia/GLCache \
+  -v ~/.cache/isaac/computecache:/root/.nv/ComputeCache \
+  -v ~/.cache/isaac/warp:/root/.cache/warp \
+  -v ~/.cache/isaac/logs:/root/.nvidia-omniverse/logs \
+  assemble-bench-env
+docker logs -f assemble-bench       # wait for HUD_SERVE_PORT=8765
+./scripts/check_local_gpu.sh --served
+```
+
+**3. Agent env** (any Python 3.11+; this pin is the one the container serves)
+
+```bash
+uv venv --python 3.12 .venv-agent && source .venv-agent/bin/activate
+uv pip install "hud @ git+https://github.com/hud-evals/hud-python.git@014a43f69b20b1addfc3b2647c9bd8d967be75e3"
+export HUD_API_KEY=sk-hud-...
+```
+
+**4. Scripted check, then Astra**
+
+`EPISODES=0` runs only the scripted `move_joints` call (hold the gripper open): it boots the
+sim, steps it, and prints the tool result with both camera frames and joint state. Run it
+before spending model calls:
+
+```bash
+RUNTIME=tcp://127.0.0.1:8765 EPISODES=0 python examples/llm_assembly.py
+```
+
+Then one Astra episode on `peg_round_8mm` (up to 100 tool calls, 1000-tick horizon):
+
+```bash
+RUNTIME=tcp://127.0.0.1:8765 TASK=peg_round_8mm EPISODES=1 python examples/llm_assembly.py
+```
+
+It prints the job and trace URLs and `success=<seated>/<episodes>`. The same episodes from the
+CLI, on the peg suite in [`tasks/llm/pegs.json`](tasks/llm/pegs.json) (default prompt and
+settings rather than the example's system prompt):
+
+```bash
+hud eval tasks/llm/pegs.json gpt-6-astra --runtime tcp://127.0.0.1:8765 \
+  --task-ids peg_round_8mm --max-steps 100 -y
+```
+
+Stop with `docker rm -f assemble-bench`. The sim is killed if a build, reset, or step overruns
+its budget (600 / 300 / 60 s) and the rollout fails; `docker logs assemble-bench` shows a
+`[watchdog]` line. Restart with `docker restart assemble-bench` and wait for `HUD_SERVE_PORT=8765`.
 
 ## Test your install
 
@@ -243,6 +325,7 @@ Isaac Sim 6.0.0.1 PhysX GPU fails to create its scene (CUDA error 700), so no ep
 assemble-bench/
 ├── scripts/setup_sim.sh     Host Isaac Sim install steps
 ├── scripts/setup_agent.sh   Path B agent env install
+├── scripts/check_local_gpu.sh  Local GPU + Docker preflight
 ├── requirements-agent.txt   agent-side pins (Path B); .lock is the full freeze
 ├── assemble_bench/          pip-installable Arena environment package
 │   ├── environments/assembly/   variants.py (task catalog), scene, tasks, rewards

@@ -80,6 +80,12 @@ docker run --rm --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all -e OMNI_KIT_ACCEPT_
 
 The same cache mounts as above apply (first run is a cold boot otherwise).
 
+## LLM control on a local GPU
+
+Serve the container as above, then `RUNTIME=tcp://127.0.0.1:8765 python examples/llm_assembly.py`
+(`EPISODES=0` for the scripted check only). Full steps are in the README, "Run on a local GPU".
+`scripts/check_local_gpu.sh` checks the driver, Docker GPU access, and the image beforehand.
+
 ## Modal
 
 `nvcr.io` answers 401 without an NGC login. `docker/modal_deploy.py` follows the

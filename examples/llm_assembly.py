@@ -1,18 +1,24 @@
-"""Peg insertion by an LLM through ``move_joints``, on Modal.
+"""Peg insertion by an LLM through ``move_joints``, on Modal or a local GPU.
 
 The env serves one motion tool, ``move_joints`` (8-D absolute joint targets in
 radians). A call plays the motion until the arm reaches the target or stops, then
 returns both cameras and the joint state. Part poses are never returned.
 
 A scripted ``move_joints`` call checks the stack first and the agent only starts if
-it passes. Publish the image once (``modal run docker/modal_deploy.py``), then::
+it passes. ``RUNTIME`` picks where the env runs:
+
+- ``modal`` (default): publish the image once (``modal run docker/modal_deploy.py``).
+- ``tcp://127.0.0.1:8765``: attach to an env already served on a local GPU
+  (see the README, "Run on a local GPU").
+
+Then::
 
     python examples/llm_assembly.py
 
-``TASK`` (default ``peg_round_8mm``), ``EPISODES`` (default 3), ``MAX_STEPS`` (tool
-calls per episode, default 100) and ``HUD_LLM_MODEL`` (default ``gpt-6-astra``)
-override the defaults. An episode succeeds when the peg seats before the 1000-tick
-(66.7 s) horizon.
+``TASK`` (default ``peg_round_8mm``), ``EPISODES`` (default 3; 0 runs only the scripted
+check), ``MAX_STEPS`` (tool calls per episode, default 100) and ``HUD_LLM_MODEL``
+(default ``gpt-6-astra``) override the defaults. An episode succeeds when the peg seats
+before the 1000-tick (66.7 s) horizon.
 """
 
 from __future__ import annotations
@@ -24,12 +30,13 @@ from hud.agents import create_agent
 from hud.agents.base import Agent
 from hud.eval import Task, Taskset
 from hud.eval.run import Run
-from hud.eval.runtime import ModalRuntime
+from hud.eval.runtime import ModalRuntime, Runtime
 from hud.eval.runtime.core import RuntimeConfig, RuntimeGPU, RuntimeLimits, RuntimeResources
 from hud.settings import settings
 
 IMAGE_NAME = "hud-assemble-bench-env"
 PORT = 8765
+RUNTIME = os.environ.get("RUNTIME", "modal")
 TASK = os.environ.get("TASK", "peg_round_8mm")
 EPISODES = int(os.environ.get("EPISODES", "3"))
 MAX_STEPS = int(os.environ.get("MAX_STEPS", "100"))
@@ -47,7 +54,11 @@ SYSTEM_PROMPT = (
 )
 
 
-def runtime() -> ModalRuntime:
+def runtime() -> Runtime | ModalRuntime:
+    if RUNTIME.startswith("tcp://"):
+        return Runtime(RUNTIME)
+    if RUNTIME != "modal":
+        raise ValueError(f"RUNTIME must be 'modal' or a tcp:// url, got {RUNTIME!r}")
     return ModalRuntime(
         IMAGE_NAME,
         command=("python", "-m", "hud.environment.server", "env.py", "--host", "0.0.0.0", "--port", str(PORT)),
