@@ -21,7 +21,9 @@ for dir in "${labs[@]}"; do
 done
 # --no-deps keeps Kit's torch/warp pins. isaaclab.utils and the teleop
 # package import these directly; they are not in the isaacsim wheels.
-python -m pip install --no-cache-dir "lazy_loader>=0.4" "toml" "prettytable==3.3.0" "gymnasium==1.2.1"
+# Arena metrics import h5py at env build; isaaclab_arena's setup.py does not
+# declare it, and the isaaclab install above is --no-deps.
+python -m pip install --no-cache-dir "lazy_loader>=0.4" "toml" "prettytable==3.3.0" "gymnasium==1.2.1" "h5py"
 
 python -m pip install --no-cache-dir "rsl-rl-lib==5.0.1"
 python -m pip install --force-reinstall --no-cache-dir "daqp==0.8.5"
