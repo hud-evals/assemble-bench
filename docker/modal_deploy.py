@@ -63,6 +63,10 @@ image = (
             "OMNI_KIT_ALLOW_ROOT": "1",
             "NVIDIA_DRIVER_CAPABILITIES": "all",
             "PYTHONUNBUFFERED": "1",
+            # Modal mounts the NVIDIA ICD under /etc. Mesa ICDs in
+            # /usr/share/vulkan/icd.d otherwise win, and Kit reports driver 0.00.
+            "VK_ICD_FILENAMES": "/etc/vulkan/icd.d/nvidia_icd.json",
+            "VK_DRIVER_FILES": "/etc/vulkan/icd.d/nvidia_icd.json",
         }
     )
     .add_local_dir(REPO_ROOT, remote_path="/opt/assemble-bench", copy=True, ignore=_ignore)

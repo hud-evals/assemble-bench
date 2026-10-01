@@ -102,6 +102,8 @@ def _runtime() -> ModalRuntime:
             "PRIVACY_CONSENT": "Y",
             "OMNI_KIT_ALLOW_ROOT": "1",
             "NVIDIA_DRIVER_CAPABILITIES": "all",
+            "VK_ICD_FILENAMES": "/etc/vulkan/icd.d/nvidia_icd.json",
+            "VK_DRIVER_FILES": "/etc/vulkan/icd.d/nvidia_icd.json",
         },
         runtime_config=RuntimeConfig(
             resources=RuntimeResources(
