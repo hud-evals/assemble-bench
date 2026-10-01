@@ -16,6 +16,10 @@ Two agent surfaces share one sim process (see ``agents/``):
 - ``openpi/0`` (``robot``) – VLA joint control via the ``assembly`` template
 - ``mcp`` (``tools``) – LLM end-effector tools via the ``assembly_agent`` template
   (in development; not ready for use yet)
+
+``agents/peg_control.py`` holds the joint-contract direct-control inputs
+(reference, notes, gripper step). It is not attached: the fingertip tools are
+a different surface, and stock direct control would also return part poses.
 """
 
 import os
