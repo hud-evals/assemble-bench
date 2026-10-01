@@ -60,9 +60,9 @@ RUN ${ISAAC_PY} -m pip install --no-cache-dir "pin-pink==3.1.0" \
 # (--ignore-installed) the few packages hud needs newer, then install hud
 # against a constraints freeze of everything else (pip can add, never
 # upgrade/remove).
-# GymBridge / Shared / env.gym — open hud-python#481 until those land on PyPI.
-# PyPI 0.6.10–0.6.12 do not export them; Path B fails at import without this pin.
-ARG HUD_GIT_REF=a08d8d83fe56c9427bcba53536c548410dedd330
+# GymBridge (hud-python#481) plus DirectControl (move_joints). PyPI 0.6.x
+# exports neither; Path B fails at import without this pin.
+ARG HUD_GIT_REF=014a43f69b20b1addfc3b2647c9bd8d967be75e3
 # openai is excluded from the freeze: kit ships a newer pin while hud wants 2.44,
 # and the env server never imports kit's openai path.
 RUN ${ISAAC_PY} -m pip install --no-cache-dir --ignore-installed \
@@ -76,15 +76,14 @@ RUN ${ISAAC_PY} -m pip install --no-cache-dir --ignore-installed \
     && ${ISAAC_PY} -m pip install --no-cache-dir --no-deps "av==18.0.0" \
     && ${ISAAC_PY} -m pip install --no-cache-dir --no-deps "openpi-client==0.1.2" \
     && ${ISAAC_PY} -c "from openpi_client import msgpack_numpy; print('openpi/0 codec OK')" \
-    && ${ISAAC_PY} -c "from hud.environment.robot import GymBridge; from hud.eval.runtime import Shared; print('hud robot stack OK')"
+    && ${ISAAC_PY} -c "from hud.environment.robot import DirectControl, GymBridge; from hud.eval.runtime import Shared; print('hud robot stack OK')"
 
 # The bench: env server + the assemble_bench package (parts, HDRIs, variants).
 # scripts/ ships too: env.py imports experts.rl.takeover for CG-DAgger, and the
 # scripted experts load scripts/experts/{base,peg}.py by path at takeover time.
 COPY assemble_bench /app/assemble_bench/assemble_bench
-COPY agents /app/assemble_bench/agents
 COPY scripts /app/assemble_bench/scripts
-COPY env.py contract.json /app/assemble_bench/
+COPY env.py direct_control.py contract.json /app/assemble_bench/
 RUN ${ISAAC_PY} -m pip install --no-deps -e /app/assemble_bench/assemble_bench
 
 ENV OMNI_KIT_ACCEPT_EULA=YES \

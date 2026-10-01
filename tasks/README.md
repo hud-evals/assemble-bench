@@ -13,8 +13,8 @@ tasks/
 │   ├── all.json         # every task (14 benchmark + debug)
 │   ├── smoke.json       # one peg + gear + nut
 │   └── debug.json       # apple → bowl hello-world (not part of the benchmark)
-└── agent/               # LLM tool path (in development) – not ready yet
-    └── pegs.json
+└── llm/                 # template id "assembly_direct" (move_joints tool)
+    └── pegs.json        # the 8 peg variants
 ```
 
 ## Running a suite
@@ -33,8 +33,9 @@ python -c "import json;[print(r['slug']) for r in json.load(open('tasks/vla/all.
   | xargs -I{} python examples/run_eval.py --task {} --num-envs 15 --waves 2
 ```
 
-> The LLM tool-use path (`tasks/agent/`, `env` template `assembly_agent`) is **in
-> development** and not ready for use yet.
+LLMs run the `assembly_direct` template through
+[`examples/llm_assembly.py`](../examples/llm_assembly.py), which takes a task id
+(`TASK=peg_round_8mm`) rather than a suite file.
 
 ## Regenerate from variants
 

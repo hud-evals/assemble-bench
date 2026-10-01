@@ -17,11 +17,10 @@ docker build -f docker/Dockerfile -t assemble-bench-env .
 Needs an NVIDIA NGC login to pull the Isaac Sim base image
 (`docker login nvcr.io`).
 
-The image installs `hud` (the HUD SDK, formerly `hud-python`) from the
-[hud-python#481](https://github.com/hud-evals/hud-python/pull/481) commit into kit's
-Python (constraint-frozen so kit-owned packages are never upgraded). That pin is
-required for Path B (`GymBridge` / `Shared` / `env.gym`); PyPI `0.6.10`–`0.6.12` do
-not export them yet.
+The image installs `hud` (the HUD SDK, formerly `hud-python`) from
+`014a43f6` into kit's Python (constraint-frozen so kit-owned packages are never
+upgraded). That pin is required for Path B (`GymBridge` / `env.gym`) and for
+`DirectControl`. PyPI `0.6.10`–`0.6.12` export neither.
 
 ## Run
 
@@ -80,3 +79,29 @@ docker run --rm --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all -e OMNI_KIT_ACCEPT_
 ```
 
 The same cache mounts as above apply (first run is a cold boot otherwise).
+
+## Modal
+
+`nvcr.io` answers 401 without an NGC login. `docker/modal_deploy.py` follows the
+README host install instead: public `isaacsim[all,extscache]==6.0.0.1` on a CUDA
+image, then `docker/modal_image.sh`. The NGC Dockerfile above is unchanged.
+Isaac Sim 6 needs an RTX GPU. Use `L40S`. A100 and H100 cannot render.
+
+```bash
+modal run docker/modal_deploy.py
+python examples/llm_assembly.py
+```
+
+`examples/llm_assembly.py` is the LLM path: one scripted `move_joints` call,
+then `EPISODES` (default 3) of `gpt-6-astra` on `assembly_direct`. The agent does
+not start if that call errors. `MAX_STEPS` (default 100) is the tool-call budget.
+`assembly_direct` sets the sim horizon to 1000 control ticks (15 Hz); the VLA
+`assembly` template keeps the peg default of 40 s.
+
+The Modal image installs `h5py` (Arena metrics) and `hydra-core` (`isaaclab_tasks`
+config loading), which the `--no-deps` installs skip, and `libxt6` (MaterialX loads
+`libXt.so.6` at Kit startup). For Vulkan it follows the RoboLab and RoboDojo
+images: no Mesa ICDs (apt recommends install them and they win over NVIDIA),
+`libegl1`, and NVIDIA ICD and EGL manifests under `/usr/share`. With that, Kit
+reports the L40S and driver 580. `env.py` kills the sim if a build, reset or step
+overruns its budget, so a hang fails the rollout instead of holding the sandbox.

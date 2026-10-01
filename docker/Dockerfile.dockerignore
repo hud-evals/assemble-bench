@@ -4,7 +4,7 @@
 # Isaac Lab itself IS needed).
 *
 !assemble_bench
-!agents
+!direct_control.py
 !scripts
 !env.py
 !contract.json
