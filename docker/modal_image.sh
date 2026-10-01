@@ -19,6 +19,9 @@ fi
 for dir in "${labs[@]}"; do
   python -m pip install --no-cache-dir --no-deps -e "$dir"
 done
+# --no-deps keeps Kit's torch/warp pins. isaaclab.utils and the teleop
+# package import these directly; they are not in the isaacsim wheels.
+python -m pip install --no-cache-dir "lazy_loader>=0.4" "toml" "prettytable==3.3.0" "gymnasium==1.2.1"
 
 python -m pip install --no-cache-dir "rsl-rl-lib==5.0.1"
 python -m pip install --force-reinstall --no-cache-dir "daqp==0.8.5"

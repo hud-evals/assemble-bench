@@ -2,9 +2,9 @@
 
 The env serves ``control`` / ``move_joints`` (8-D absolute joint targets).
 There is no end-effector absolute action, so this is not ``move_to``. One
-scripted call holds the gripper open, then a short ``gpt-6-astra`` smoke runs
-``EPISODES`` (default 2) of ``peg_round_8mm`` at medium effort. Failures are
-expected. ``MAX_STEPS`` (default 20) is the tool-call budget per episode.
+scripted call holds the gripper open, then ``EPISODES`` (default 1) of
+``gpt-6-astra`` on ``peg_round_8mm`` at medium effort. Astra does not start
+if that call errors. ``MAX_STEPS`` (default 20) is the tool-call budget.
 
 Publish the image first (``modal run docker/modal_deploy.py``), then::
 
@@ -43,7 +43,7 @@ COMMAND = (
     str(PORT),
 )
 TASK = os.environ.get("TASK", "peg_round_8mm")
-EPISODES = int(os.environ.get("EPISODES", "2"))
+EPISODES = int(os.environ.get("EPISODES", "1"))
 MAX_STEPS = int(os.environ.get("MAX_STEPS", "20"))
 MODEL = os.environ.get("HUD_LLM_MODEL", "gpt-6-astra")
 
@@ -170,6 +170,10 @@ async def main() -> None:
         max_concurrent=1,
     )
     _print_job("scripted", smoke, started)
+    scripted = smoke.runs[0]
+    if scripted.grade.is_error or EPISODES < 1:
+        print("[llm] skipping astra", flush=True)
+        return
 
     agent = create_agent(
         MODEL,
