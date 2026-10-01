@@ -62,7 +62,7 @@ RUN ${ISAAC_PY} -m pip install --no-cache-dir "pin-pink==3.1.0" \
 # upgrade/remove).
 # GymBridge (hud-python#481) plus DirectControl (move_joints). PyPI 0.6.x
 # exports neither; Path B fails at import without this pin.
-ARG HUD_GIT_REF=7dd1e3c14d8118605ecf0f2fd10ae4fede85e80c
+ARG HUD_GIT_REF=014a43f69b20b1addfc3b2647c9bd8d967be75e3
 # openai is excluded from the freeze: kit ships a newer pin while hud wants 2.44,
 # and the env server never imports kit's openai path.
 RUN ${ISAAC_PY} -m pip install --no-cache-dir --ignore-installed \
@@ -82,9 +82,8 @@ RUN ${ISAAC_PY} -m pip install --no-cache-dir --ignore-installed \
 # scripts/ ships too: env.py imports experts.rl.takeover for CG-DAgger, and the
 # scripted experts load scripts/experts/{base,peg}.py by path at takeover time.
 COPY assemble_bench /app/assemble_bench/assemble_bench
-COPY agents /app/assemble_bench/agents
 COPY scripts /app/assemble_bench/scripts
-COPY env.py contract.json /app/assemble_bench/
+COPY env.py direct_control.py contract.json /app/assemble_bench/
 RUN ${ISAAC_PY} -m pip install --no-deps -e /app/assemble_bench/assemble_bench
 
 ENV OMNI_KIT_ACCEPT_EULA=YES \

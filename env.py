@@ -16,19 +16,17 @@ Two agent surfaces share one sim process:
 - ``openpi/0`` (``robot``) – VLA joint control via the ``assembly`` template
 - ``mcp`` (``control``) – LLM joint targets via ``assembly_direct`` (``move_joints``)
 
-There is no end-effector absolute action. ``droid_differential_ik`` is 7-D
-deltas, so it is not the direct-control embodiment. Fingertip tools in
-``agents/`` are not published. Part poses and expert channels are absent from
-``contract.json``, which is what the motion tool labels.
+The LLM surface is stock ``DirectControl`` on the joint contract (see
+``direct_control.py``). Part poses and expert channels are absent from
+``contract.json``, so the motion tool cannot leak them.
 """
 
 import os
-import subprocess
 import sys
-import time
 from pathlib import Path
 
-from agents.peg_control import GRIPPER_MAX_STEP, NOTES, SETTLE_S, joint_reference
+from direct_control import GRIPPER_MAX_STEP, NOTES, joint_reference
+from assemble_bench.environments.assembly.watchdog import GuardedEnv, Watchdog
 from hud import Environment
 from hud.environment.robot import DirectControl
 
@@ -36,6 +34,7 @@ from hud.environment.robot import DirectControl
 # sim child (env.gym spawns `env.py:make_env` in its own process); the server
 # process imports this module too and must stay light — no Isaac at import.
 _app = None
+_watchdog = None
 
 # Honor ASSEMBLY_TASK so docker eval warms the same variant the suite starts on.
 _DEFAULT_TASK = os.environ.get("ASSEMBLY_TASK", "peg_round_8mm")
@@ -47,9 +46,10 @@ _JOINT_EMBODIMENT = "droid_abs_joint_pos_softmimic"
 # (600 ticks) unless a caller passes episode_length_s. ceil(s / step_dt) is 1001.
 _DIRECT_EPISODE_S = 1000 / 15
 
-# First scene build includes the PhysX step that can spin inside fabric with
-# the GIL held. A Python timer never runs then; a side process kills the build.
+# Seconds a build, reset, or step may take before the watchdog kills the sim.
 _BUILD_BUDGET_S = 600.0
+_RESET_BUDGET_S = 300.0
+_STEP_BUDGET_S = 60.0
 
 # scripts/ on path so ``experts.rl.takeover`` imports cleanly.
 _SCRIPTS = Path(__file__).resolve().parent / "scripts"
@@ -59,30 +59,6 @@ if str(_SCRIPTS) not in sys.path:
 
 def _env_flag(name: str, default: str = "0") -> bool:
     return os.environ.get(name, default).strip().lower() in ("1", "true", "yes", "on")
-
-
-def _arm_build_watchdog() -> Path:
-    """SIGKILL this process if the scene build does not finish within the budget."""
-    flag = Path(f"/tmp/assemble-bench-build-{time.time_ns()}")
-    code = (
-        "import os, signal, sys, time\n"
-        "pid, budget, flag = int(sys.argv[1]), float(sys.argv[2]), sys.argv[3]\n"
-        "time.sleep(budget)\n"
-        "if not os.path.exists(flag):\n"
-        "    print(f'[env] build exceeded {budget:.0f}s; killing {pid}', flush=True)\n"
-        "    os.kill(pid, signal.SIGKILL)\n"
-    )
-    subprocess.Popen(
-        [sys.executable, "-c", code, str(os.getpid()), str(_BUILD_BUDGET_S), str(flag)],
-        start_new_session=True,
-    )
-    print(f"[env] build watchdog armed ({_BUILD_BUDGET_S:.0f}s)", flush=True)
-    return flag
-
-
-def _clear_build_watchdog(flag: Path) -> None:
-    flag.write_text("ok")
-    print("[env] build watchdog cleared", flush=True)
 
 
 def make_env(
@@ -95,25 +71,34 @@ def make_env(
     episode_length_s: float | str | None = None,
 ):
     """Module-level factory the sim child re-imports by source path."""
-    global _app
-    if _app is None:
-        # Isaac must be up before any isaaclab import; the sim child calls
-        # this on its main thread, which Kit requires to own.
-        from isaaclab.app import AppLauncher
+    global _app, _watchdog
+    _watchdog = _watchdog or Watchdog()
+    with _watchdog.guard("build", _BUILD_BUDGET_S):
+        if _app is None:
+            # Isaac must be up before any isaaclab import; the sim child calls
+            # this on its main thread, which Kit requires to own.
+            from isaaclab.app import AppLauncher
 
-        _app = AppLauncher(headless=True, enable_cameras=True).app
+            _app = AppLauncher(headless=True, enable_cameras=True).app
 
-    from assemble_bench.environments.assembly.assembly import make_assembly_env
+            # Isaac Lab owns the physics views. Kit's SimulationManager extension
+            # (registered at startup) would rebuild them on every play and
+            # invalidate Isaac Lab's, so turn its timeline callbacks off.
+            from isaacsim.core.simulation_manager.impl.simulation_manager import (
+                SimulationManager as KitSimulationManager,
+            )
 
-    # GymBridge may pass build args as strings from the wire.
-    if isinstance(expert_takeover, str):
-        expert_takeover = expert_takeover.strip().lower() in ("1", "true", "yes", "on")
-    mode = takeover_mode or os.environ.get("ASSEMBLY_TAKEOVER_MODE", "grasp")
+            KitSimulationManager.enable_all_default_callbacks(False)
 
-    # Bare Arena env; CG-DAgger is an optional outer wrap (not part of the package).
-    length_s = None if episode_length_s in (None, "") else float(episode_length_s)
-    watchdog = _arm_build_watchdog()
-    try:
+        from assemble_bench.environments.assembly.assembly import make_assembly_env
+
+        # GymBridge may pass build args as strings from the wire.
+        if isinstance(expert_takeover, str):
+            expert_takeover = expert_takeover.strip().lower() in ("1", "true", "yes", "on")
+        mode = takeover_mode or os.environ.get("ASSEMBLY_TAKEOVER_MODE", "grasp")
+
+        # Bare Arena env; CG-DAgger is an optional outer wrap (not part of the package).
+        length_s = None if episode_length_s in (None, "") else float(episode_length_s)
         env = make_assembly_env(
             task=task,
             num_envs=num_envs,
@@ -121,8 +106,7 @@ def make_env(
             reward=reward,
             episode_length_s=length_s,
         )
-    finally:
-        _clear_build_watchdog(watchdog)
+    env = GuardedEnv(env, _watchdog, _RESET_BUDGET_S, _STEP_BUDGET_S)
     if expert_takeover:
         from experts.rl.takeover import ExpertTakeover
 
@@ -142,7 +126,6 @@ sim = env.gym(
 DirectControl(
     notes=NOTES,
     max_step=GRIPPER_MAX_STEP,
-    settle=SETTLE_S,
     reference=joint_reference,
 ).attach(sim)
 

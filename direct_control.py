@@ -1,8 +1,7 @@
-"""Joint-contract inputs for peg insertion, attached by ``env.py``.
+"""Inputs for the ``move_joints`` tool that ``env.py`` attaches to the sim.
 
-The sim's action is 8-D absolute joint targets (``joint_pos``), so the motion
-tool is ``move_joints``. There is no end-effector absolute action to drive
-``move_to``. The fingertip tools in ``agents/tools.py`` are not published.
+The contract action is 8-D absolute joint targets (``joint_pos``), so
+``DirectControl`` serves ``move_joints``.
 
 ``joint_reference`` is the first absolute target: measured arm joints, gripper
 commanded open. ``contract.json`` omits part poses and expert channels, so the
@@ -26,9 +25,6 @@ NOTES = (
 # Default pacing would close the gripper over many seconds. One tick must be
 # able to cross 0.5.
 GRIPPER_MAX_STEP = {"gripper.open_close": 1.0}
-
-# Fingers need about a second to finish after the command.
-SETTLE_S = 1.0
 
 
 def joint_reference(data: dict[str, Any]) -> np.ndarray:
