@@ -57,53 +57,6 @@
       "shape": [4],
       "names": ["eef_quat.w", "eef_quat.x", "eef_quat.y", "eef_quat.z"]
     },
-    "policy/held_part_pose": {
-      "role": "observation",
-      "state_type": "OBJECT_ABS_POSE",
-      "state_representation": "XYZ_QUATXYZW",
-      "frame": "env_local",
-      "dtype": "float32",
-      "units": "m",
-      "shape": [7],
-      "names": ["held.x", "held.y", "held.z", "held.qx", "held.qy", "held.qz", "held.qw"],
-      "comment": "Privileged (PA-RL critic only); policy adapters must not consume."
-    },
-    "policy/fixed_part_pose": {
-      "role": "observation",
-      "state_type": "OBJECT_ABS_POSE",
-      "state_representation": "XYZ_QUATXYZW",
-      "frame": "env_local",
-      "dtype": "float32",
-      "units": "m",
-      "shape": [7],
-      "names": ["fixed.x", "fixed.y", "fixed.z", "fixed.qx", "fixed.qy", "fixed.qz", "fixed.qw"],
-      "comment": "Privileged (PA-RL critic only); policy adapters must not consume."
-    },
-    "policy/expert_active": {
-      "role": "observation",
-      "dtype": "float32",
-      "units": "none",
-      "shape": [1],
-      "names": ["expert_active"],
-      "comment": "1 when sim-side scripted expert has latched (ASSEMBLY_EXPERT_TAKEOVER); else 0. Injected by ExpertTakeover wrapper."
-    },
-    "policy/executed_action": {
-      "role": "observation",
-      "dtype": "float32",
-      "units": "mixed",
-      "shape": [8],
-      "names": [
-        "panda_joint1",
-        "panda_joint2",
-        "panda_joint3",
-        "panda_joint4",
-        "panda_joint5",
-        "panda_joint6",
-        "panda_joint7",
-        "gripper.open_close"
-      ],
-      "comment": "Command applied by env.step (expert when latched). HG-DAgger labels; not for the policy adapter."
-    },
     "action": {
       "role": "action",
       "type": "joint_pos",
@@ -127,5 +80,5 @@
       "comment": "Dims 0-6: absolute joint targets (rad, REAL), Franka limits. Dim 7: gripper (NORM01; >0.5 closes)."
     }
   },
-  "comment": "EnvHub / policy wire for env.py (canonical). Distinct from scripts/experts/demo_contract.json (scripted-expert HUD streams). DROID abs joint-pos: 7 Franka targets + binary gripper; privileged poses for PA-RL; expert_active/executed_action when CG-DAgger is on."
+  "comment": "EnvHub / policy wire for env.py (canonical). Distinct from scripts/experts/demo_contract.json (scripted-expert HUD streams). DROID abs joint-pos: 7 Franka targets + binary gripper. Part poses and expert channels stay off this contract so a motion-tool result cannot label them."
 }

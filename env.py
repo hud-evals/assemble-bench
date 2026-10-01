@@ -12,23 +12,23 @@ with ``ASSEMBLY_*`` env vars as deploy-time defaults. Optional CG-DAgger
 (``expert_takeover``) wraps the bare Arena env via ``scripts/experts/rl``.
 Episodic args (seed) go through ``sim.reset``.
 
-Two agent surfaces share one sim process (see ``agents/``):
+Two agent surfaces share one sim process:
 - ``openpi/0`` (``robot``) – VLA joint control via the ``assembly`` template
-- ``mcp`` (``tools``) – LLM end-effector tools via the ``assembly_agent`` template
-  (in development; not ready for use yet)
+- ``mcp`` (``control``) – LLM joint targets via ``assembly_direct`` (``move_joints``)
 
-``agents/peg_control.py`` holds the joint-contract direct-control inputs
-(reference, notes, gripper step). It is not attached: the fingertip tools are
-a different surface, and stock direct control would also return part poses.
+There is no end-effector absolute action. ``droid_differential_ik`` is 7-D
+deltas, so it is not the direct-control embodiment. Fingertip tools in
+``agents/`` are not published. Part poses and expert channels are absent from
+``contract.json``, which is what the motion tool labels.
 """
 
 import os
 import sys
 from pathlib import Path
 
-from agents import AssemblyToolBridge
-from agents.prompt import agent_prompt
+from agents.peg_control import GRIPPER_MAX_STEP, NOTES, SETTLE_S, joint_reference
 from hud import Environment
+from hud.environment.robot import DirectControl
 
 # One Kit app per process, booted on first env build. Isaac lives ONLY in the
 # sim child (env.gym spawns `env.py:make_env` in its own process); the server
@@ -38,8 +38,8 @@ _app = None
 # Honor ASSEMBLY_TASK so docker eval warms the same variant the suite starts on.
 _DEFAULT_TASK = os.environ.get("ASSEMBLY_TASK", "peg_round_8mm")
 
-# LLM path always rebuilds on the differential-IK embodiment (7-D EEF deltas).
-_EEF_EMBODIMENT = "droid_differential_ik"
+# Direct control steps this embodiment: 8-D absolute joint targets.
+_JOINT_EMBODIMENT = "droid_abs_joint_pos_softmimic"
 
 # scripts/ on path so ``experts.rl.takeover`` imports cleanly.
 _SCRIPTS = Path(__file__).resolve().parent / "scripts"
@@ -88,23 +88,19 @@ def make_env(
 
 
 env = Environment(name="assembly-bench")
-# Tool bridge publishes both the openpi wire and the MCP tools from the sim
-# process; env.gym publishes every capability the bridge declares.
-# Docker image hud may predate bridge= (treats it as a JSON build default and
-# crashes on ABCMeta) — only pass it when gym_command accepts the kwarg.
-_gym_kw: dict = {
-    "contract": str(Path(__file__).parent / "contract.json"),
-    "task": _DEFAULT_TASK,
-}
-try:
-    from hud.environment.robot.gym import gym_command as _gym_command
-    import inspect as _inspect
-
-    if "bridge" in _inspect.signature(_gym_command).parameters:
-        _gym_kw["bridge"] = AssemblyToolBridge
-except Exception:
-    pass
-sim = env.gym(make_env, **_gym_kw)
+sim = env.gym(
+    make_env,
+    contract=str(Path(__file__).parent / "contract.json"),
+    task=_DEFAULT_TASK,
+)
+# Stock motion tool on the joint contract. reference= is the 8-D command
+# (7 measured joints + gripper 0 open); auto-bind would need a matching obs.
+DirectControl(
+    notes=NOTES,
+    max_step=GRIPPER_MAX_STEP,
+    settle=SETTLE_S,
+    reference=joint_reference,
+).attach(sim)
 
 
 @env.template(id="assembly")
@@ -136,25 +132,20 @@ async def assembly(
     yield await sim.result(token=ep["token"])
 
 
-@env.template(id="assembly_agent")
-async def assembly_agent(
-    task: str = _DEFAULT_TASK,
-    seed: int = 0,
-    guided: bool = True,
-    episode_length_s: float = 80.0,
-):
-    """One assembly episode for an LLM (MCP end-effector tools).
+@env.template(id="assembly_direct")
+async def assembly_direct(task: str = _DEFAULT_TASK, seed: int = 0):
+    """One assembly episode for an LLM (``move_joints`` on the sole slot).
 
-    Default ``episode_length_s=80`` → ~1200 ticks @ 15 Hz (2× the VLA peg
-    timeout). VLA ``assembly`` does not pass this, so peg variants stay at 40 s.
+    The reset claim is what the motion tool binds. Yielding a robot token
+    would hand that slot to a policy client. Peg timeout stays 40 s.
     """
-    # Differential IK rebuilds the scene when the prior episode was joint-control.
     ep = await sim.reset(
         task=task,
         seed=seed,
-        embodiment=_EEF_EMBODIMENT,
-        guided=guided,
-        episode_length_s=episode_length_s,
+        num_envs=1,
+        embodiment=_JOINT_EMBODIMENT,
+        reward="none",
+        expert_takeover=False,
     )
-    yield agent_prompt(ep["prompt"], guided=guided)
-    yield await sim.result(token=ep["token"])
+    yield {"prompt": ep["prompt"]}
+    yield await sim.result()

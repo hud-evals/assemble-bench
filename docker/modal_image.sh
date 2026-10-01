@@ -28,7 +28,7 @@ python -m pip install --no-cache-dir --no-deps -e assemble_bench
 
 # Same constraint install as docker/Dockerfile: hud may add packages, not
 # upgrade the ones Kit already owns.
-HUD_GIT_REF=a08d8d83fe56c9427bcba53536c548410dedd330
+HUD_GIT_REF=7dd1e3c14d8118605ecf0f2fd10ae4fede85e80c
 python -m pip install --no-cache-dir --ignore-installed \
   "packaging>=24.0" "pydantic>=2.11.7" "pyperclip>=1.9.0" "uvicorn>=0.35" "websockets>=15.0.1" \
   "openai==2.44.0"
@@ -38,4 +38,4 @@ python -m pip list --format=freeze --exclude-editable \
 python -m pip install --no-cache-dir -c /tmp/kit-constraints.txt \
   "hud @ git+https://github.com/hud-evals/hud-python.git@${HUD_GIT_REF}" msgpack
 python -m pip install --no-cache-dir --no-deps "av==18.0.0" "openpi-client==0.1.2"
-python -c "from openpi_client import msgpack_numpy; from hud.environment.robot import GymBridge; print('hud robot stack OK')"
+python -c "from openpi_client import msgpack_numpy; from hud.environment.robot import DirectControl, GymBridge; print('hud robot stack OK')"

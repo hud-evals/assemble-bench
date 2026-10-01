@@ -1,7 +1,8 @@
 """One peg episode on Modal: hold the measured joints, gripper open.
 
-The policy reads ``policy/joint_pos`` only. Part poses stay on the wire and
-are not used. Direct control is not attached.
+The policy reads ``policy/joint_pos`` only. Part poses are not in the
+contract. This runner uses the robot wire; ``examples/llm_assembly.py`` is
+the ``move_joints`` path.
 
 Publish the image first (``modal run docker/modal_deploy.py``), then::
 

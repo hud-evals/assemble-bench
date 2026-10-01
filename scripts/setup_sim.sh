@@ -117,9 +117,9 @@ echo "[setup] installing assemble_bench…"
 ${PY[@]} -m pip install -e assemble_bench
 
 echo "[setup] installing HUD serving stack (Path B)…"
-# GymBridge / Shared live on this commit (hud-python#481) until they ship on PyPI.
+# GymBridge plus DirectControl. Neither is on PyPI 0.6.x.
 ${PY[@]} -m pip install \
-  "hud @ git+https://github.com/hud-evals/hud-python.git@a08d8d83fe56c9427bcba53536c548410dedd330" \
+  "hud @ git+https://github.com/hud-evals/hud-python.git@7dd1e3c14d8118605ecf0f2fd10ae4fede85e80c" \
   msgpack
 # openpi-client pins numpy<2 but only its msgpack codec is used; av just for wheels.
 ${PY[@]} -m pip install --no-deps "av>=12" "openpi-client==0.1.2"

@@ -1,15 +1,12 @@
-"""Joint-contract inputs for peg insertion. Not attached.
+"""Joint-contract inputs for peg insertion, attached by ``env.py``.
 
-Two surfaces are still open, and they would not score the same:
+The sim's action is 8-D absolute joint targets (``joint_pos``), so the motion
+tool is ``move_joints``. There is no end-effector absolute action to drive
+``move_to``. The fingertip tools in ``agents/tools.py`` are not published.
 
-- Direct control on this file's joint contract (``move_joints``), with no
-  privileged object poses in the tool result.
-- The fingertip tools in ``agents/tools.py`` (differential IK, not ready).
-
-Stock direct control labels every non-image observation, including
-``policy/held_part_pose`` and ``policy/fixed_part_pose``. Attaching it before
-that result can omit those keys would leak poses. ``env.py`` does not import
-this module.
+``joint_reference`` is the first absolute target: measured arm joints, gripper
+commanded open. ``contract.json`` omits part poses and expert channels, so the
+tool result cannot label them.
 """
 
 from __future__ import annotations

@@ -17,11 +17,10 @@ docker build -f docker/Dockerfile -t assemble-bench-env .
 Needs an NVIDIA NGC login to pull the Isaac Sim base image
 (`docker login nvcr.io`).
 
-The image installs `hud` (the HUD SDK, formerly `hud-python`) from the
-[hud-python#481](https://github.com/hud-evals/hud-python/pull/481) commit into kit's
-Python (constraint-frozen so kit-owned packages are never upgraded). That pin is
-required for Path B (`GymBridge` / `Shared` / `env.gym`); PyPI `0.6.10`–`0.6.12` do
-not export them yet.
+The image installs `hud` (the HUD SDK, formerly `hud-python`) from
+`7dd1e3c1` into kit's Python (constraint-frozen so kit-owned packages are never
+upgraded). That pin is required for Path B (`GymBridge` / `env.gym`) and for
+`DirectControl`. PyPI `0.6.10`–`0.6.12` export neither.
 
 ## Run
 
@@ -91,9 +90,15 @@ Isaac Sim 6 needs an RTX GPU. Use `L40S`. A100 and H100 cannot render.
 ```bash
 modal run docker/modal_deploy.py
 python examples/scripted_modal.py
+python examples/llm_assembly.py
 ```
 
 `examples/scripted_modal.py` runs one `peg_round_8mm` episode (`num_envs=1`)
-through `ModalRuntime`. The policy holds the measured joints and commands the
+on the robot wire. The policy holds the measured joints and commands the
 gripper open. It does not read part poses. `STEPS` caps control ticks
 (default 100). `TASK` selects the variant.
+
+`examples/llm_assembly.py` is the LLM path: one scripted `move_joints` call,
+then a short `gpt-6-astra` smoke on `assembly_direct`. The motion tool is
+joint targets. Part poses are not in the tool result. `EPISODES` (default 2)
+and `MAX_STEPS` (default 20) keep the smoke short.

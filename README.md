@@ -73,7 +73,8 @@ Path B also needs a separate **Python 3.12+** env (`lerobot==0.6.0` will not ins
 | Isaac Sim (Docker base) | `nvcr.io/nvidia/isaac-sim:6.0.0-dev2` | [`docker/Dockerfile`](docker/Dockerfile) |
 | Isaac Sim (host install) | pip `isaacsim[all,extscache]==6.0.0.1` | – |
 | Isaac Lab + Isaac Lab Arena | exact commits | git submodules |
-| `hud` | git `a08d8d83` ([#481](https://github.com/hud-evals/hud-python/pull/481)) | setup scripts, Dockerfile, [`requirements-agent.txt`](requirements-agent.txt) |
+| `hud` (env server) | git `7dd1e3c1` (DirectControl; includes GymBridge from [#481](https://github.com/hud-evals/hud-python/pull/481)) | [`scripts/setup_sim.sh`](scripts/setup_sim.sh), [`docker/Dockerfile`](docker/Dockerfile), [`docker/modal_image.sh`](docker/modal_image.sh) |
+| `hud` (VLA agent freeze) | git `a08d8d83` | [`requirements-agent.txt`](requirements-agent.txt), [`requirements-agent.lock`](requirements-agent.lock) |
 | Agent env (torch `2.11.0`, lerobot `0.6.0`, …) | full freeze (Python 3.12) | [`requirements-agent.lock`](requirements-agent.lock) |
 
 ## Install
@@ -115,8 +116,8 @@ pip install -e submodules/IsaacLab-Arena "pin-pink==3.1.0" "rsl-rl-lib==5.0.1"
 
 # This bench + HUD serving stack for Path B:
 pip install -e assemble_bench
-# GymBridge/Shared from hud-python#481 (not on PyPI 0.6.x yet):
-pip install "hud @ git+https://github.com/hud-evals/hud-python.git@a08d8d83fe56c9427bcba53536c548410dedd330" msgpack
+# GymBridge + DirectControl (not on PyPI 0.6.x):
+pip install "hud @ git+https://github.com/hud-evals/hud-python.git@7dd1e3c14d8118605ecf0f2fd10ae4fede85e80c" msgpack
 pip install --no-deps "av>=12" "openpi-client==0.1.2"
 ```
 
