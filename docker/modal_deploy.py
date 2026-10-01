@@ -52,6 +52,9 @@ image = (
         "libvulkan1",
     )
     .pip_install(ISAACSIM, extra_index_url="https://pypi.nvidia.com")
+    # MaterialX's GL libs need libXt. This stays after the isaacsim layer so
+    # adding it does not rebuild that wheel install.
+    .apt_install("libxt6")
     .env(
         {
             "OMNI_KIT_ACCEPT_EULA": "YES",

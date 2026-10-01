@@ -23,7 +23,9 @@ deltas, so it is not the direct-control embodiment. Fingertip tools in
 """
 
 import os
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 from agents.peg_control import GRIPPER_MAX_STEP, NOTES, SETTLE_S, joint_reference
@@ -45,6 +47,10 @@ _JOINT_EMBODIMENT = "droid_abs_joint_pos_softmimic"
 # (600 ticks) unless a caller passes episode_length_s. ceil(s / step_dt) is 1001.
 _DIRECT_EPISODE_S = 1000 / 15
 
+# First scene build includes the PhysX step that can spin inside fabric with
+# the GIL held. A Python timer never runs then; a side process kills the build.
+_BUILD_BUDGET_S = 600.0
+
 # scripts/ on path so ``experts.rl.takeover`` imports cleanly.
 _SCRIPTS = Path(__file__).resolve().parent / "scripts"
 if str(_SCRIPTS) not in sys.path:
@@ -53,6 +59,30 @@ if str(_SCRIPTS) not in sys.path:
 
 def _env_flag(name: str, default: str = "0") -> bool:
     return os.environ.get(name, default).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _arm_build_watchdog() -> Path:
+    """SIGKILL this process if the scene build does not finish within the budget."""
+    flag = Path(f"/tmp/assemble-bench-build-{time.time_ns()}")
+    code = (
+        "import os, signal, sys, time\n"
+        "pid, budget, flag = int(sys.argv[1]), float(sys.argv[2]), sys.argv[3]\n"
+        "time.sleep(budget)\n"
+        "if not os.path.exists(flag):\n"
+        "    print(f'[env] build exceeded {budget:.0f}s; killing {pid}', flush=True)\n"
+        "    os.kill(pid, signal.SIGKILL)\n"
+    )
+    subprocess.Popen(
+        [sys.executable, "-c", code, str(os.getpid()), str(_BUILD_BUDGET_S), str(flag)],
+        start_new_session=True,
+    )
+    print(f"[env] build watchdog armed ({_BUILD_BUDGET_S:.0f}s)", flush=True)
+    return flag
+
+
+def _clear_build_watchdog(flag: Path) -> None:
+    flag.write_text("ok")
+    print("[env] build watchdog cleared", flush=True)
 
 
 def make_env(
@@ -82,13 +112,17 @@ def make_env(
 
     # Bare Arena env; CG-DAgger is an optional outer wrap (not part of the package).
     length_s = None if episode_length_s in (None, "") else float(episode_length_s)
-    env = make_assembly_env(
-        task=task,
-        num_envs=num_envs,
-        embodiment=embodiment,
-        reward=reward,
-        episode_length_s=length_s,
-    )
+    watchdog = _arm_build_watchdog()
+    try:
+        env = make_assembly_env(
+            task=task,
+            num_envs=num_envs,
+            embodiment=embodiment,
+            reward=reward,
+            episode_length_s=length_s,
+        )
+    finally:
+        _clear_build_watchdog(watchdog)
     if expert_takeover:
         from experts.rl.takeover import ExpertTakeover
 

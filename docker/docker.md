@@ -107,4 +107,7 @@ tool-call budget. `assembly_direct` sets the sim horizon to about 1000
 control steps (15 Hz); the VLA `assembly` template keeps the peg default
 of 40 s. The Modal image also installs `h5py` (Arena metrics) and
 `hydra-core` (`isaaclab_tasks` config loading). Neither is declared by the
-packages the image installs with `--no-deps`.
+packages the image installs with `--no-deps`. `libxt6` supplies `libXt.so.6`,
+which MaterialX loads at Kit startup. The first scene build is killed if it
+does not return within 600 s, so a PhysX fabric hang fails the reset instead
+of leaving the GPU sandbox up.
