@@ -113,4 +113,5 @@ which MaterialX loads at Kit startup. `VK_ICD_FILENAMES` and
 Modal mounts on the GPU), so the Mesa ICDs under `/usr/share/vulkan/icd.d`
 are not selected first. The first scene build is killed if it does not
 return within 600 s, so a PhysX fabric hang fails the reset instead of
-leaving the GPU sandbox up.
+leaving the GPU sandbox up. `make_assembly_env` sets Arena
+`disable_fabric`, so that build uses USD I/O instead of the fabric plugin.

@@ -221,6 +221,8 @@ def make_assembly_env(
     args.light_intensity, args.enable_cameras = light_intensity, True
     args.num_envs = num_envs
     args.reward = reward
+    # PhysX fabric spins on the first step when Kit has no Vulkan device.
+    args.disable_fabric = True
     arena_env = AssembleBenchEnvironment().get_env(args)
     if episode_length_s is not None:
         arena_env.task.episode_length_s = float(episode_length_s)
