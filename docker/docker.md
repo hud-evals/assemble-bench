@@ -80,3 +80,20 @@ docker run --rm --gpus all -e NVIDIA_DRIVER_CAPABILITIES=all -e OMNI_KIT_ACCEPT_
 ```
 
 The same cache mounts as above apply (first run is a cold boot otherwise).
+
+## Modal
+
+`nvcr.io` answers 401 without an NGC login. `docker/modal_deploy.py` follows the
+README host install instead: public `isaacsim[all,extscache]==6.0.0.1` on a CUDA
+image, then `docker/modal_image.sh`. The NGC Dockerfile above is unchanged.
+Isaac Sim 6 needs an RTX GPU. Use `L40S`. A100 and H100 cannot render.
+
+```bash
+modal run docker/modal_deploy.py
+python examples/scripted_modal.py
+```
+
+`examples/scripted_modal.py` runs one `peg_round_8mm` episode (`num_envs=1`)
+through `ModalRuntime`. The policy holds the measured joints and commands the
+gripper open. It does not read part poses. `STEPS` caps control ticks
+(default 100). `TASK` selects the variant.

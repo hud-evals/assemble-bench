@@ -81,3 +81,13 @@ on [`hud-evals/AssembleBench`](https://huggingface.co/datasets/hud-evals/Assembl
 The CG-DAgger checkpoint was trained only on `peg_round_8mm` corrections, so the other
 round-peg sizes measure whether the recovery transfers. Base DROID checkpoints score 0%
 here without task finetuning – the writeup covers why.
+
+## One episode on Modal
+
+[`scripted_modal.py`](scripted_modal.py) is a hold-joint policy on
+`ModalRuntime` (L40S). Publish the image first; see [`docker/docker.md`](../docker/docker.md).
+
+```bash
+modal run docker/modal_deploy.py
+python examples/scripted_modal.py
+```
