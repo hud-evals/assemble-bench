@@ -1,18 +1,20 @@
-"""Peg insertion by an LLM through ``move_joints``, on Modal.
+"""Peg insertion by an LLM through ``move_joints``.
 
 The env serves one motion tool, ``move_joints`` (8-D absolute joint targets in
 radians). A call plays the motion until the arm reaches the target or stops, then
 returns both cameras and the joint state. Part poses are never returned.
 
 A scripted ``move_joints`` call checks the stack first and the agent only starts if
-it passes. Publish the image once (``modal run docker/modal_deploy.py``), then::
+it passes. On a local GPU, serve the env (Docker or host Isaac) and point this
+process at that control channel::
 
-    python examples/llm_assembly.py
+    HUD_ENV_URL=tcp://127.0.0.1:8765 EPISODES=1 python examples/llm_assembly.py
 
-``TASK`` (default ``peg_round_8mm``), ``EPISODES`` (default 3), ``MAX_STEPS`` (tool
-calls per episode, default 100) and ``HUD_LLM_MODEL`` (default ``gpt-6-astra``)
-override the defaults. An episode succeeds when the peg seats before the 1000-tick
-(66.7 s) horizon.
+Unset ``HUD_ENV_URL`` keeps the Modal path (publish once with
+``modal run docker/modal_deploy.py``). ``TASK`` (default ``peg_round_8mm``),
+``EPISODES`` (default 3), ``MAX_STEPS`` (tool calls per episode, default 100) and
+``HUD_LLM_MODEL`` (default ``gpt-6-astra``) override the defaults. An episode
+succeeds when the peg seats before the 1000-tick (66.7 s) horizon.
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from hud.agents import create_agent
 from hud.agents.base import Agent
 from hud.eval import Task, Taskset
 from hud.eval.run import Run
-from hud.eval.runtime import ModalRuntime
+from hud.eval.runtime import ModalRuntime, Runtime
 from hud.eval.runtime.core import RuntimeConfig, RuntimeGPU, RuntimeLimits, RuntimeResources
 from hud.settings import settings
 
@@ -47,7 +49,11 @@ SYSTEM_PROMPT = (
 )
 
 
-def runtime() -> ModalRuntime:
+def runtime() -> ModalRuntime | Runtime:
+    # An already-served local sim. Unset keeps the Modal sandbox below.
+    url = os.environ.get("HUD_ENV_URL")
+    if url:
+        return Runtime(url)
     return ModalRuntime(
         IMAGE_NAME,
         command=("python", "-m", "hud.environment.server", "env.py", "--host", "0.0.0.0", "--port", str(PORT)),

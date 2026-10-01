@@ -82,10 +82,24 @@ The CG-DAgger checkpoint was trained only on `peg_round_8mm` corrections, so the
 round-peg sizes measure whether the recovery transfers. Base DROID checkpoints score 0%
 here without task finetuning – the writeup covers why.
 
+## One episode locally
+
+[`llm_assembly.py`](llm_assembly.py) calls `move_joints` once, then runs Astra on
+`assembly_direct`. Serve the sim first (README, Local GPU) and wait for
+`HUD_SERVE_PORT=8765`. Set `HUD_API_KEY` in the environment. One round peg:
+
+```bash
+HUD_ENV_URL=tcp://127.0.0.1:8765 TASK=peg_round_8mm EPISODES=1 \
+  uv run --python 3.12 \
+  --with "hud @ git+https://github.com/hud-evals/hud-python.git@014a43f69b20b1addfc3b2647c9bd8d967be75e3" \
+  python examples/llm_assembly.py
+```
+
 ## One episode on Modal
 
-[`llm_assembly.py`](llm_assembly.py) calls `move_joints` once, then runs a short
-`gpt-6-astra` smoke on `assembly_direct` (`ModalRuntime`, L40S). Publish the image first; see [`docker/docker.md`](../docker/docker.md).
+The same script uses `ModalRuntime` when `HUD_ENV_URL` is unset. Publish the image
+first; see [`docker/docker.md`](../docker/docker.md). On Modal, Isaac Sim 6.0.0.1
+PhysX GPU currently fails to create a scene.
 
 ```bash
 modal run docker/modal_deploy.py

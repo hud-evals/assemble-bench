@@ -217,16 +217,94 @@ joint contract, template `assembly_direct`):
 - Horizon: 1000 control ticks (66.7 s at 15 Hz). Grading is the sim's `success` term (peg
   seated), reported as `score` 1.0 or 0.0 with the episode result.
 
-```bash
-modal run docker/modal_deploy.py     # publish the image once
-HUD_API_KEY=... python examples/llm_assembly.py
-```
-
 `examples/llm_assembly.py` runs one scripted `move_joints` call first and starts the agent
 only if it passes. Task suites for the template are in [`tasks/llm/`](tasks/llm/pegs.json).
 
-**Known limitation:** on Modal (L40S, driver 580) Kit now finds the GPU through Vulkan, but
-Isaac Sim 6.0.0.1 PhysX GPU fails to create its scene (CUDA error 700), so no episode steps yet.
+### Local GPU
+
+Serve the sim on this machine, then run Astra against that control channel. This path
+does not use Modal. The sim is the Docker image, or a host Isaac Sim 6 install. The
+agent is a separate Python 3.12 process with `hud` at the same pin as the image
+(`014a43f6`). `./scripts/setup_agent.sh` is the VLA freeze and is the wrong interpreter
+here.
+
+**Versions.** Docker base `nvcr.io/nvidia/isaac-sim:6.0.0-dev2`, or host pip
+`isaacsim[all,extscache]==6.0.0.1`. [Isaac Sim 6.0.0](https://docs.isaacsim.omniverse.nvidia.com/6.0.0/installation/requirements.html)
+lists Linux driver `580.95.05` as the tested driver. RTX GPU with RT cores and 16 GB+;
+this repo has run on L40S, RTX 6000 Ada, and RTX PRO 6000 Blackwell. A100 and H100
+cannot render. Ubuntu 22.04+.
+
+**Serve** (one command, after `docker build -f docker/Dockerfile -t assemble-bench-env .`):
+
+```bash
+docker run -d --name assemble-bench --gpus all \
+  -e NVIDIA_DRIVER_CAPABILITIES=all -e OMNI_KIT_ACCEPT_EULA=YES \
+  -p 127.0.0.1:8765:8765 assemble-bench-env
+```
+
+Host Isaac, in the environment from `./scripts/setup_sim.sh`:
+
+```bash
+OMNI_KIT_ACCEPT_EULA=YES python -m hud.environment.server env.py --port 8765
+```
+
+Wait until the log prints `HUD_SERVE_PORT=8765`. The first boot can take 5–15 minutes.
+Cache mounts are in [`docker/docker.md`](docker/docker.md).
+
+**One round-peg episode** (`assembly_direct`, `peg_round_8mm`). Set `HUD_API_KEY` in
+the environment first. `EPISODES=1` is one Astra episode after the scripted check:
+
+```bash
+HUD_ENV_URL=tcp://127.0.0.1:8765 TASK=peg_round_8mm EPISODES=1 \
+  uv run --python 3.12 \
+  --with "hud @ git+https://github.com/hud-evals/hud-python.git@014a43f69b20b1addfc3b2647c9bd8d967be75e3" \
+  python examples/llm_assembly.py
+```
+
+`HUD_ENV_URL` is the control channel the sim is already serving (`Runtime` in the SDK).
+Leave it unset only when using Modal.
+
+| Name | Role |
+|---|---|
+| `OMNI_KIT_ACCEPT_EULA` | required in the sim process |
+| `NVIDIA_DRIVER_CAPABILITIES` | set to `all` on the Docker run |
+| `HUD_API_KEY` | gateway calls and trace upload |
+| `HUD_ENV_URL` | local control channel; selects this path |
+| `TASK` | variant; default `peg_round_8mm` |
+| `EPISODES` | Astra episodes after the scripted check; default `3` |
+| `MAX_STEPS` | tool calls per episode; default `100` |
+| `HUD_LLM_MODEL` | default `gpt-6-astra` |
+
+Leave `HUD_API_URL` and `HUD_INFERENCE_URL` unset unless they point at a control plane
+you intend to use. A leftover localhost value sends traces and gateway calls nowhere.
+
+### Modal
+
+`HUD_API_KEY` must be set, as on the local path. Leave `HUD_ENV_URL` unset.
+
+```bash
+modal run docker/modal_deploy.py
+python examples/llm_assembly.py
+```
+
+**Known limitation:** on Modal (L40S, driver 580) Kit finds the GPU through Vulkan, but
+Isaac Sim 6.0.0.1 PhysX GPU fails to create its scene (CUDA error 700), so that path
+has no episode steps. The local commands above are what to run on a GPU machine.
+
+### Troubleshooting
+
+- The Astra command connects immediately. If nothing is listening on port 8765, start
+  the sim and wait for `HUD_SERVE_PORT=8765`.
+- The script prints `[llm] scripted check failed; skipping the agent` when
+  `move_joints` errors. Read that error before running Astra again.
+- Vulkan `No device could be created`: the container did not see the NVIDIA GPU.
+  Check `--gpus all`, `NVIDIA_DRIVER_CAPABILITIES`, the NVIDIA container toolkit, and
+  a 6.0.0-line driver (`580.95.05`).
+- A100 and H100 have no RT cores. Isaac Sim 6 will not render on them.
+- `./scripts/setup_agent.sh` installs `hud` at `a08d8d83`. Use the `uv run` command
+  above for this runner.
+- CUDA 700 (`Unable to create scene`) is the Modal PhysX failure. This local path
+  does not use Modal. A local GPU has not been run from this change.
 
 ## Test your install
 
