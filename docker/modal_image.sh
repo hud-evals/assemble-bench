@@ -34,7 +34,7 @@ python -m pip install --no-cache-dir --no-deps -e assemble_bench
 
 # Same constraint install as docker/Dockerfile: hud may add packages, not
 # upgrade the ones Kit already owns.
-HUD_GIT_REF=7dd1e3c14d8118605ecf0f2fd10ae4fede85e80c
+HUD_GIT_REF=014a43f69b20b1addfc3b2647c9bd8d967be75e3
 python -m pip install --no-cache-dir --ignore-installed \
   "packaging>=24.0" "pydantic>=2.11.7" "pyperclip>=1.9.0" "uvicorn>=0.35" "websockets>=15.0.1" \
   "openai==2.44.0"

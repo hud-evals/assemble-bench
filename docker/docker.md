@@ -18,7 +18,7 @@ Needs an NVIDIA NGC login to pull the Isaac Sim base image
 (`docker login nvcr.io`).
 
 The image installs `hud` (the HUD SDK, formerly `hud-python`) from
-`7dd1e3c1` into kit's Python (constraint-frozen so kit-owned packages are never
+`014a43f6` into kit's Python (constraint-frozen so kit-owned packages are never
 upgraded). That pin is required for Path B (`GymBridge` / `env.gym`) and for
 `DirectControl`. PyPI `0.6.10`–`0.6.12` export neither.
 

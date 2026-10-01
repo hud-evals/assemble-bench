@@ -16,6 +16,8 @@ Requires ``MODAL_TOKEN_ID`` and ``MODAL_TOKEN_SECRET``.
 
 from __future__ import annotations
 
+import json
+import shlex
 from pathlib import Path
 
 import modal
@@ -28,6 +30,14 @@ ISAACSIM = "isaacsim[all,extscache]==6.0.0.1"
 
 # RTX-class. A100 / H100 cannot render Isaac Sim 6.
 GPU = "L40S"
+
+VULKAN_ICD = Path("/usr/share/vulkan/icd.d/nvidia_icd.json")
+EGL_VENDOR = Path("/usr/share/glvnd/egl_vendor.d/10_nvidia.json")
+_ICD = {
+    "file_format_version": "1.0.0",
+    "ICD": {"library_path": "libGLX_nvidia.so.0", "api_version": "1.3.0"},
+}
+_EGL = {"file_format_version": "1.0.0", "ICD": {"library_path": "libEGL_nvidia.so.0"}}
 
 _SKIP = {".git", "__pycache__", ".venv", "Isaac-GR00T"}
 
@@ -52,9 +62,18 @@ image = (
         "libvulkan1",
     )
     .pip_install(ISAACSIM, extra_index_url="https://pypi.nvidia.com")
-    # MaterialX's GL libs need libXt. This stays after the isaacsim layer so
-    # adding it does not rebuild that wheel install.
-    .apt_install("libxt6")
+    .run_commands(
+        # Vulkan stack of the RoboLab/RoboDojo Modal images. Apt recommends
+        # install Mesa ICDs, which win over NVIDIA (Kit reports driver 0.00);
+        # without libegl1 vkCreateInstance returns ERROR_INCOMPATIBLE_DRIVER.
+        # libxt6: MaterialX's GL libs.
+        "apt-get update && apt-get install -y --no-install-recommends libegl1 libxt6",
+        "apt-get purge -y 'mesa-vulkan-drivers*' || true",
+        f"mkdir -p {VULKAN_ICD.parent} {EGL_VENDOR.parent}",
+        f"echo {shlex.quote(json.dumps(_ICD))} > {VULKAN_ICD}",
+        f"echo {shlex.quote(json.dumps(_EGL))} > {EGL_VENDOR}",
+        "rm -rf /var/lib/apt/lists/*",
+    )
     .env(
         {
             "OMNI_KIT_ACCEPT_EULA": "YES",
@@ -63,10 +82,8 @@ image = (
             "OMNI_KIT_ALLOW_ROOT": "1",
             "NVIDIA_DRIVER_CAPABILITIES": "all",
             "PYTHONUNBUFFERED": "1",
-            # Modal mounts the NVIDIA ICD under /etc. Mesa ICDs in
-            # /usr/share/vulkan/icd.d otherwise win, and Kit reports driver 0.00.
-            "VK_ICD_FILENAMES": "/etc/vulkan/icd.d/nvidia_icd.json",
-            "VK_DRIVER_FILES": "/etc/vulkan/icd.d/nvidia_icd.json",
+            "VK_ICD_FILENAMES": str(VULKAN_ICD),
+            "__GLX_VENDOR_LIBRARY_NAME": "nvidia",
         }
     )
     .add_local_dir(REPO_ROOT, remote_path="/opt/assemble-bench", copy=True, ignore=_ignore)
