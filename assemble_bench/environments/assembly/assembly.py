@@ -192,12 +192,15 @@ def make_assembly_env(
     hdr: str = "asm_machine_shop",
     light_intensity: float = 1500.0,
     reward: str = "none",
+    episode_length_s: float | None = None,
 ):
     """Build the assembly Arena gym env for one variant (the Isaac app must be up).
 
     Shared factory for HUD / custom RL loops. ``reward="staged"|"potential"``
     turns on dense shaping; "none" (default) keeps the env reward-free for eval.
-    ``num_envs`` is the vectorization width.
+    ``num_envs`` is the vectorization width. ``episode_length_s`` overrides the
+    variant timeout before the gym env is built (control steps are
+    ``ceil(episode_length_s / step_dt)``). ``None`` keeps the variant default.
     """
     import carb
     from isaaclab_arena.cli.isaaclab_arena_cli import (
@@ -219,5 +222,15 @@ def make_assembly_env(
     args.num_envs = num_envs
     args.reward = reward
     arena_env = AssembleBenchEnvironment().get_env(args)
+    if episode_length_s is not None:
+        arena_env.task.episode_length_s = float(episode_length_s)
     builder_cfg = arena_env_builder_cfg_from_argparse(args)
-    return ArenaEnvBuilder(arena_env, builder_cfg).make_registered(render_mode="rgb_array")
+    env = ArenaEnvBuilder(arena_env, builder_cfg).make_registered(render_mode="rgb_array")
+    if episode_length_s is not None:
+        core = getattr(env, "unwrapped", env)
+        print(
+            f"[env] episode_length_s → {float(episode_length_s):g}s "
+            f"({int(core.max_episode_length)} ticks)",
+            flush=True,
+        )
+    return env

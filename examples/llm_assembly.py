@@ -2,9 +2,10 @@
 
 The env serves ``control`` / ``move_joints`` (8-D absolute joint targets).
 There is no end-effector absolute action, so this is not ``move_to``. One
-scripted call holds the gripper open, then ``EPISODES`` (default 1) of
-``gpt-6-astra`` on ``peg_round_8mm`` at medium effort. Astra does not start
-if that call errors. ``MAX_STEPS`` (default 20) is the tool-call budget.
+scripted call holds the gripper open, then ``EPISODES`` (default 16, capped
+at 16) of ``gpt-6-astra`` on ``peg_round_8mm`` at medium effort. Astra does
+not start if that call errors. ``MAX_STEPS`` (default 20) is the tool-call
+budget. The sim horizon is ~1000 control steps, set by ``assembly_direct``.
 
 Publish the image first (``modal run docker/modal_deploy.py``), then::
 
@@ -43,7 +44,8 @@ COMMAND = (
     str(PORT),
 )
 TASK = os.environ.get("TASK", "peg_round_8mm")
-EPISODES = int(os.environ.get("EPISODES", "1"))
+# One smoke, not a sweep. An env override can run fewer; it cannot run more.
+EPISODES = min(16, int(os.environ.get("EPISODES", "16")))
 MAX_STEPS = int(os.environ.get("MAX_STEPS", "20"))
 MODEL = os.environ.get("HUD_LLM_MODEL", "gpt-6-astra")
 
@@ -150,9 +152,11 @@ def _print_job(label: str, job, started: float) -> None:
     print(f"modal-job: {url}", flush=True)
     _append_job(f"modal-job: {url}")
     for run in job.runs:
+        success = run.evaluation.get("success")
+        trace_url = f"{settings.hud_web_url.rstrip('/')}/trace/{run.trace_id}"
         print(
-            f"[{label}] reward={run.reward} success={run.evaluation.get('success')} "
-            f"trace={run.trace_id} wall_s={elapsed:.1f} job={url}",
+            f"[{label}] reward={run.reward} success={success} "
+            f"trace={run.trace_id} wall_s={elapsed:.1f} job={url} trace_url={trace_url}",
             flush=True,
         )
 
@@ -171,7 +175,8 @@ async def main() -> None:
     )
     _print_job("scripted", smoke, started)
     scripted = smoke.runs[0]
-    if scripted.grade.is_error or EPISODES < 1:
+    # Pre-launch failures set trace status and leave grade.is_error false.
+    if scripted.trace.is_error or scripted.grade.is_error or EPISODES < 1:
         print("[llm] skipping astra", flush=True)
         return
 
@@ -189,6 +194,8 @@ async def main() -> None:
         max_concurrent=1,
     )
     _print_job("astra", job, started)
+    ok = sum(1 for run in job.runs if run.evaluation.get("success") is True)
+    print(f"[astra] sr={ok}/{len(job.runs)}", flush=True)
 
 
 if __name__ == "__main__":

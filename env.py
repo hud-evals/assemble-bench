@@ -41,6 +41,10 @@ _DEFAULT_TASK = os.environ.get("ASSEMBLY_TASK", "peg_round_8mm")
 # Direct control steps this embodiment: 8-D absolute joint targets.
 _JOINT_EMBODIMENT = "droid_abs_joint_pos_softmimic"
 
+# ~1000 control steps at 15 Hz for the LLM template. Peg variants stay at 40 s
+# (600 ticks) unless a caller passes episode_length_s. ceil(s / step_dt) is 1001.
+_DIRECT_EPISODE_S = 1000 / 15
+
 # scripts/ on path so ``experts.rl.takeover`` imports cleanly.
 _SCRIPTS = Path(__file__).resolve().parent / "scripts"
 if str(_SCRIPTS) not in sys.path:
@@ -58,6 +62,7 @@ def make_env(
     reward: str = os.environ.get("ASSEMBLY_REWARD", "none"),
     expert_takeover: bool | str = _env_flag("ASSEMBLY_EXPERT_TAKEOVER"),
     takeover_mode: str | None = None,
+    episode_length_s: float | str | None = None,
 ):
     """Module-level factory the sim child re-imports by source path."""
     global _app
@@ -76,8 +81,13 @@ def make_env(
     mode = takeover_mode or os.environ.get("ASSEMBLY_TAKEOVER_MODE", "grasp")
 
     # Bare Arena env; CG-DAgger is an optional outer wrap (not part of the package).
+    length_s = None if episode_length_s in (None, "") else float(episode_length_s)
     env = make_assembly_env(
-        task=task, num_envs=num_envs, embodiment=embodiment, reward=reward,
+        task=task,
+        num_envs=num_envs,
+        embodiment=embodiment,
+        reward=reward,
+        episode_length_s=length_s,
     )
     if expert_takeover:
         from experts.rl.takeover import ExpertTakeover
@@ -137,7 +147,8 @@ async def assembly_direct(task: str = _DEFAULT_TASK, seed: int = 0):
     """One assembly episode for an LLM (``move_joints`` on the sole slot).
 
     The reset claim is what the motion tool binds. Yielding a robot token
-    would hand that slot to a policy client. Peg timeout stays 40 s.
+    would hand that slot to a policy client. The horizon is ~1000 control
+    steps; the VLA ``assembly`` template keeps the variant default (pegs 40 s).
     """
     ep = await sim.reset(
         task=task,
@@ -146,6 +157,7 @@ async def assembly_direct(task: str = _DEFAULT_TASK, seed: int = 0):
         embodiment=_JOINT_EMBODIMENT,
         reward="none",
         expert_takeover=False,
+        episode_length_s=_DIRECT_EPISODE_S,
     )
     yield {"prompt": ep["prompt"]}
     yield await sim.result()

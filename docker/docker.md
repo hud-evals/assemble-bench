@@ -99,6 +99,11 @@ gripper open. It does not read part poses. `STEPS` caps control ticks
 (default 100). `TASK` selects the variant.
 
 `examples/llm_assembly.py` is the LLM path: one scripted `move_joints` call,
-then `EPISODES` (default 1) of `gpt-6-astra` on `assembly_direct`. Astra does
-not start if that call errors. The motion tool is joint targets. Part poses
-are not in the tool result. `MAX_STEPS` (default 20) is the tool-call budget.
+then `EPISODES` (default 16, never more than 16) of `gpt-6-astra` on
+`assembly_direct`. Astra does not start if that call errors, including a
+reset that fails before the agent runs. The motion tool is joint targets.
+Part poses are not in the tool result. `MAX_STEPS` (default 20) is the
+tool-call budget. `assembly_direct` sets the sim horizon to about 1000
+control steps (15 Hz); the VLA `assembly` template keeps the peg default
+of 40 s. The Modal image also installs `h5py`, which Arena's metrics import
+and `isaaclab_arena`'s package metadata does not declare.
