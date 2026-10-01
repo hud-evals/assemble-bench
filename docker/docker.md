@@ -105,5 +105,6 @@ reset that fails before the agent runs. The motion tool is joint targets.
 Part poses are not in the tool result. `MAX_STEPS` (default 20) is the
 tool-call budget. `assembly_direct` sets the sim horizon to about 1000
 control steps (15 Hz); the VLA `assembly` template keeps the peg default
-of 40 s. The Modal image also installs `h5py`, which Arena's metrics import
-and `isaaclab_arena`'s package metadata does not declare.
+of 40 s. The Modal image also installs `h5py` (Arena metrics) and
+`hydra-core` (`isaaclab_tasks` config loading). Neither is declared by the
+packages the image installs with `--no-deps`.
