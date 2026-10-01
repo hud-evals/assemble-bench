@@ -6,9 +6,8 @@ on a CUDA image, then ``docker/modal_image.sh``. The NGC Dockerfile is unchanged
 
     modal run docker/modal_deploy.py
 
-Then a hold-joint episode, or the LLM smoke (L40S; A100 and H100 cannot render)::
+Then the LLM run (L40S; A100 and H100 cannot render)::
 
-    python examples/scripted_modal.py
     python examples/llm_assembly.py
 
 Requires ``MODAL_TOKEN_ID`` and ``MODAL_TOKEN_SECRET``.

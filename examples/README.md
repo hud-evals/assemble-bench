@@ -84,13 +84,10 @@ here without task finetuning – the writeup covers why.
 
 ## One episode on Modal
 
-[`scripted_modal.py`](scripted_modal.py) is a hold-joint policy on the robot
-wire (`ModalRuntime`, L40S). [`llm_assembly.py`](llm_assembly.py) calls
-`move_joints` once, then runs a short `gpt-6-astra` smoke on
-`assembly_direct`. Publish the image first; see [`docker/docker.md`](../docker/docker.md).
+[`llm_assembly.py`](llm_assembly.py) calls `move_joints` once, then runs a short
+`gpt-6-astra` smoke on `assembly_direct` (`ModalRuntime`, L40S). Publish the image first; see [`docker/docker.md`](../docker/docker.md).
 
 ```bash
 modal run docker/modal_deploy.py
-python examples/scripted_modal.py
 python examples/llm_assembly.py
 ```

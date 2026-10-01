@@ -1,203 +1,117 @@
-"""Peg insertion through stock joint direct control, on Modal.
+"""Peg insertion by an LLM through ``move_joints``, on Modal.
 
-The env serves ``control`` / ``move_joints`` (8-D absolute joint targets).
-There is no end-effector absolute action, so this is not ``move_to``. One
-scripted call holds the gripper open, then ``EPISODES`` (default 16, capped
-at 16) of ``gpt-6-astra`` on ``peg_round_8mm`` at medium effort. Astra does
-not start if that call errors. ``MAX_STEPS`` (default 20) is the tool-call
-budget. The sim horizon is ~1000 control steps, set by ``assembly_direct``.
+The env serves one motion tool, ``move_joints`` (8-D absolute joint targets in
+radians). A call plays the motion until the arm reaches the target or stops, then
+returns both cameras and the joint state. Part poses are never returned.
 
-Publish the image first (``modal run docker/modal_deploy.py``), then::
+A scripted ``move_joints`` call checks the stack first and the agent only starts if
+it passes. Publish the image once (``modal run docker/modal_deploy.py``), then::
 
     python examples/llm_assembly.py
 
-``ASSEMBLE_RUN_LOG``, when set, receives a ``modal-job:`` line per sandbox
-and the HUD job URL.
+``TASK`` (default ``peg_round_8mm``), ``EPISODES`` (default 3), ``MAX_STEPS`` (tool
+calls per episode, default 100) and ``HUD_LLM_MODEL`` (default ``gpt-6-astra``)
+override the defaults. An episode succeeds when the peg seats before the 1000-tick
+(66.7 s) horizon.
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
-import time
-from contextlib import asynccontextmanager
 
 from hud.agents import create_agent
 from hud.agents.base import Agent
 from hud.eval import Task, Taskset
+from hud.eval.run import Run
 from hud.eval.runtime import ModalRuntime
 from hud.eval.runtime.core import RuntimeConfig, RuntimeGPU, RuntimeLimits, RuntimeResources
-from hud.eval.run import Run
 from hud.settings import settings
 
 IMAGE_NAME = "hud-assemble-bench-env"
 PORT = 8765
-WORKDIR = "/opt/assemble-bench"
-COMMAND = (
-    "python",
-    "-m",
-    "hud.environment.server",
-    "env.py",
-    "--host",
-    "0.0.0.0",
-    "--port",
-    str(PORT),
-)
 TASK = os.environ.get("TASK", "peg_round_8mm")
-# One smoke, not a sweep. An env override can run fewer; it cannot run more.
-EPISODES = min(16, int(os.environ.get("EPISODES", "16")))
-MAX_STEPS = int(os.environ.get("MAX_STEPS", "20"))
+EPISODES = int(os.environ.get("EPISODES", "3"))
+MAX_STEPS = int(os.environ.get("MAX_STEPS", "100"))
 MODEL = os.environ.get("HUD_LLM_MODEL", "gpt-6-astra")
 
-# These must not appear in a move_joints result. The contract omits them.
-_HIDDEN = (
-    "policy/held_part_pose",
-    "policy/fixed_part_pose",
-    "policy/expert_active",
-    "policy/executed_action",
-)
+# Keys the contract omits; none may appear in a tool result.
+PRIVILEGED_KEYS = ("policy/held_part_pose", "policy/fixed_part_pose", "policy/expert_active")
 
 SYSTEM_PROMPT = (
-    "You control a Franka Panda arm with a Robotiq gripper in a tabletop assembly "
-    "simulation through the move_joints tool. Targets are absolute joint radians. "
-    "gripper.open_close is 0 open and 1 closed; values above 0.5 close. Each call "
-    "plays a short motion and returns camera frames and joint state. "
-    "camera_obs/front_cam_rgb sees the table; camera_obs/wrist_camera_rgb looks from "
-    "the wrist. The first call has no prior frame: start from the task text, then "
-    "re-check the returned frames after every move. Every call must include a note "
-    "saying what you see and why you chose the motion. Part poses are not in the "
-    "state. Reply without a tool call when the peg is seated, or when the episode "
-    "says it has ended."
+    "You control a Franka arm with a Robotiq gripper in a tabletop assembly simulation "
+    "through move_joints. Each call moves to absolute joint targets, then returns both "
+    "camera frames and the joint state. The first call has no prior frame: start from the "
+    "task text, then re-check the frames after every move. Part poses are not in the state. "
+    "Reply without a tool call when the peg is seated or the episode has ended."
 )
 
 
-def _append_job(line: str) -> None:
-    path = os.environ.get("ASSEMBLE_RUN_LOG")
-    if not path:
-        return
-    with open(path, "a", encoding="utf-8") as handle:
-        handle.write(line if line.endswith("\n") else line + "\n")
-
-
-class _LoggedRuntime(ModalRuntime):
-    @asynccontextmanager
-    async def __call__(self, task: Task):
-        async with super().__call__(task) as runtime:
-            sandbox_id = (runtime.params or {}).get("instance_id")
-            if sandbox_id:
-                print(f"modal-job: {sandbox_id}", flush=True)
-                _append_job(f"modal-job: {sandbox_id}")
-            yield runtime
-
-
-def _runtime() -> ModalRuntime:
-    return _LoggedRuntime(
+def runtime() -> ModalRuntime:
+    return ModalRuntime(
         IMAGE_NAME,
-        command=COMMAND,
-        workdir=WORKDIR,
+        command=("python", "-m", "hud.environment.server", "env.py", "--host", "0.0.0.0", "--port", str(PORT)),
+        workdir="/opt/assemble-bench",
         port=PORT,
-        env_vars={
-            "OMNI_KIT_ACCEPT_EULA": "YES",
-            "ACCEPT_EULA": "Y",
-            "PRIVACY_CONSENT": "Y",
-            "OMNI_KIT_ALLOW_ROOT": "1",
-            "NVIDIA_DRIVER_CAPABILITIES": "all",
-            "VK_ICD_FILENAMES": "/etc/vulkan/icd.d/nvidia_icd.json",
-            "VK_DRIVER_FILES": "/etc/vulkan/icd.d/nvidia_icd.json",
-        },
         runtime_config=RuntimeConfig(
-            resources=RuntimeResources(
-                cpu=8,
-                memory_mb=65536,
-                gpu=RuntimeGPU(type="L40S", count=1),
-            ),
+            resources=RuntimeResources(cpu=8, memory_mb=65536, gpu=RuntimeGPU(type="L40S", count=1)),
             limits=RuntimeLimits(startup_timeout_s=1800, run_timeout_s=7200),
         ),
     )
 
 
-def _task(seed: int) -> Task:
-    return Task(
-        env="assembly-bench",
-        id="assembly_direct",
-        slug=f"{TASK}-seed{seed}",
-        args={"task": TASK, "seed": seed},
-    )
+def task(seed: int) -> Task:
+    return Task(env="assembly-bench", id="assembly_direct", slug=f"{TASK}-seed{seed}", args={"task": TASK, "seed": seed})
 
 
 class HoldGripper(Agent):
-    """One move_joints call: gripper stays open. Checks the result text."""
+    """One scripted ``move_joints`` call that keeps the gripper open."""
 
     async def __call__(self, run: Run) -> None:
         control = await run.client.open("control")
         result = await control.call_tool(
             "move_joints",
             {
-                "targets": [{"name": "gripper.open_close", "value": 0.0}],
-                "note": "Hold the gripper open and read the cameras before any arm motion.",
+                "target": {"name": "gripper.open_close", "value": 0.0},
+                "others": [],
+                "note": "Scripted check: hold the gripper open.",
             },
         )
-        texts = [block.text for block in result.content if getattr(block, "text", None)]
-        text = "\n".join(texts)
+        text = "\n".join(block.text for block in result.content if getattr(block, "text", None))
         print(text[:800], flush=True)
         if result.isError:
             raise RuntimeError(f"move_joints failed: {text}")
-        leaked = [key for key in _HIDDEN if key in text]
-        if leaked:
+        if leaked := [key for key in PRIVILEGED_KEYS if key in text]:
             raise RuntimeError(f"tool result labeled privileged keys: {leaked}")
-        print("privileged_keys_in_tool_result=no", flush=True)
 
 
-def _print_job(label: str, job, started: float) -> None:
-    elapsed = time.perf_counter() - started
-    url = f"{settings.hud_web_url.rstrip('/')}/jobs/{job.id}"
-    print(f"modal-job: {url}", flush=True)
-    _append_job(f"modal-job: {url}")
+def report(label: str, job) -> None:
+    web = settings.hud_web_url.rstrip("/")
+    print(f"[{label}] job={web}/jobs/{job.id}", flush=True)
     for run in job.runs:
-        success = run.evaluation.get("success")
-        trace_url = f"{settings.hud_web_url.rstrip('/')}/trace/{run.trace_id}"
         print(
-            f"[{label}] reward={run.reward} success={success} "
-            f"trace={run.trace_id} wall_s={elapsed:.1f} job={url} trace_url={trace_url}",
+            f"[{label}] reward={run.reward} success={run.evaluation.get('success')} "
+            f"trace={web}/trace/{run.trace_id}",
             flush=True,
         )
 
 
 async def main() -> None:
-    print(
-        f"[llm] task={TASK} episodes={EPISODES} max_steps={MAX_STEPS} "
-        f"model={MODEL} image={IMAGE_NAME} gpu=L40S",
-        flush=True,
-    )
-    started = time.perf_counter()
-    smoke = await Taskset(f"assemble-{TASK}-move_joints", [_task(0)]).run(
-        HoldGripper(),
-        runtime=_runtime(),
-        max_concurrent=1,
-    )
-    _print_job("scripted", smoke, started)
-    scripted = smoke.runs[0]
-    # Pre-launch failures set trace status and leave grade.is_error false.
+    check = await Taskset(f"assemble-{TASK}-move_joints", [task(0)]).run(HoldGripper(), runtime=runtime(), max_concurrent=1)
+    report("scripted", check)
+    scripted = check.runs[0]
+    # Pre-launch failures set the trace status without grade.is_error.
     if scripted.trace.is_error or scripted.grade.is_error or EPISODES < 1:
-        print("[llm] skipping astra", flush=True)
+        print("[llm] scripted check failed; skipping the agent", flush=True)
         return
 
-    agent = create_agent(
-        MODEL,
-        system_prompt=SYSTEM_PROMPT,
-        max_steps=MAX_STEPS,
-        reasoning={"effort": "medium"},
+    agent = create_agent(MODEL, system_prompt=SYSTEM_PROMPT, max_steps=MAX_STEPS, reasoning={"effort": "medium"})
+    job = await Taskset(f"{MODEL} x {TASK}", [task(seed) for seed in range(EPISODES)]).run(
+        agent, runtime=runtime(), max_concurrent=1
     )
-    tasks = [_task(seed) for seed in range(EPISODES)]
-    started = time.perf_counter()
-    job = await Taskset(f"{MODEL} x {TASK}", tasks).run(
-        agent,
-        runtime=_runtime(),
-        max_concurrent=1,
-    )
-    _print_job("astra", job, started)
-    ok = sum(1 for run in job.runs if run.evaluation.get("success") is True)
-    print(f"[astra] sr={ok}/{len(job.runs)}", flush=True)
+    report("agent", job)
+    seated = sum(run.evaluation.get("success") is True for run in job.runs)
+    print(f"[agent] success={seated}/{len(job.runs)}", flush=True)
 
 
 if __name__ == "__main__":

@@ -89,29 +89,19 @@ Isaac Sim 6 needs an RTX GPU. Use `L40S`. A100 and H100 cannot render.
 
 ```bash
 modal run docker/modal_deploy.py
-python examples/scripted_modal.py
 python examples/llm_assembly.py
 ```
 
-`examples/scripted_modal.py` runs one `peg_round_8mm` episode (`num_envs=1`)
-on the robot wire. The policy holds the measured joints and commands the
-gripper open. It does not read part poses. `STEPS` caps control ticks
-(default 100). `TASK` selects the variant.
-
 `examples/llm_assembly.py` is the LLM path: one scripted `move_joints` call,
-then `EPISODES` (default 16, never more than 16) of `gpt-6-astra` on
-`assembly_direct`. Astra does not start if that call errors, including a
-reset that fails before the agent runs. The motion tool is joint targets.
-Part poses are not in the tool result. `MAX_STEPS` (default 20) is the
-tool-call budget. `assembly_direct` sets the sim horizon to about 1000
-control steps (15 Hz); the VLA `assembly` template keeps the peg default
-of 40 s. The Modal image also installs `h5py` (Arena metrics) and
-`hydra-core` (`isaaclab_tasks` config loading). Neither is declared by the
-packages the image installs with `--no-deps`. `libxt6` supplies `libXt.so.6`,
-which MaterialX loads at Kit startup. `VK_ICD_FILENAMES` and
-`VK_DRIVER_FILES` point Kit at `/etc/vulkan/icd.d/nvidia_icd.json` (the ICD
-Modal mounts on the GPU), so the Mesa ICDs under `/usr/share/vulkan/icd.d`
-are not selected first. The first scene build is killed if it does not
-return within 600 s, so a PhysX fabric hang fails the reset instead of
-leaving the GPU sandbox up. `make_assembly_env` sets Arena
-`disable_fabric`, so that build uses USD I/O instead of the fabric plugin.
+then `EPISODES` (default 3) of `gpt-6-astra` on `assembly_direct`. The agent does
+not start if that call errors. `MAX_STEPS` (default 100) is the tool-call budget.
+`assembly_direct` sets the sim horizon to 1000 control ticks (15 Hz); the VLA
+`assembly` template keeps the peg default of 40 s.
+
+The Modal image installs `h5py` (Arena metrics) and `hydra-core` (`isaaclab_tasks`
+config loading), which the `--no-deps` installs skip, and `libxt6` (MaterialX loads
+`libXt.so.6` at Kit startup). For Vulkan it follows the RoboLab and RoboDojo
+images: no Mesa ICDs (apt recommends install them and they win over NVIDIA),
+`libegl1`, and NVIDIA ICD and EGL manifests under `/usr/share`. With that, Kit
+reports the L40S and driver 580. `env.py` kills the sim if a build, reset or step
+overruns its budget, so a hang fails the rollout instead of holding the sandbox.
