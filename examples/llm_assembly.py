@@ -105,6 +105,18 @@ def report(label: str, job) -> None:
             f"trace={web}/trace/{run.trace_id}",
             flush=True,
         )
+        steps = run.trace.steps
+        calls = sum(len(getattr(step, "tool_calls", None) or []) for step in steps)
+        print(
+            f"[{label}] status={run.trace.status} stop_reason={run.trace.stop_reason} "
+            f"steps={len(steps)} tool_calls={calls}",
+            flush=True,
+        )
+        for step in steps:
+            if step.error:
+                print(f"[{label}] step {step.step_id} error: {step.error[:400]}", flush=True)
+        if run.trace.content:
+            print(f"[{label}] final: {run.trace.content[:400]}", flush=True)
 
 
 async def main() -> None:
@@ -112,8 +124,11 @@ async def main() -> None:
     report("scripted", check)
     scripted = check.runs[0]
     # Pre-launch failures set the trace status without grade.is_error.
-    if scripted.trace.is_error or scripted.grade.is_error or EPISODES < 1:
+    if scripted.trace.is_error or scripted.grade.is_error:
         print("[llm] scripted check failed; skipping the agent", flush=True)
+        return
+    if EPISODES < 1:
+        print("[llm] scripted check passed; EPISODES=0, skipping the agent", flush=True)
         return
 
     agent = create_agent(MODEL, system_prompt=SYSTEM_PROMPT, max_steps=MAX_STEPS, reasoning={"effort": "medium"})
@@ -126,4 +141,8 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    if os.environ.get("VERBOSE"):
+        import logging
+
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
     asyncio.run(main())
