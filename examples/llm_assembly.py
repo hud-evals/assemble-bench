@@ -1,18 +1,26 @@
-"""Peg insertion by an LLM through ``move_joints``, on Modal.
+"""Peg insertion by an LLM through ``move_joints``, on Modal or a local GPU.
 
 The env serves one motion tool, ``move_joints`` (8-D absolute joint targets in
 radians). A call plays the motion until the arm reaches the target or stops, then
 returns both cameras and the joint state. Part poses are never returned.
 
 A scripted ``move_joints`` call checks the stack first and the agent only starts if
-it passes. Publish the image once (``modal run docker/modal_deploy.py``), then::
+it passes. ``RUNTIME`` picks where the env runs:
+
+- ``modal`` (default): publish the image once (``modal run docker/modal_deploy.py``).
+- ``tcp://127.0.0.1:8765``: attach to an env already served on a local GPU
+  (see the README, "Run on a local GPU").
+
+Then::
 
     python examples/llm_assembly.py
 
-``TASK`` (default ``peg_round_8mm``), ``EPISODES`` (default 3), ``MAX_STEPS`` (tool
-calls per episode, default 100) and ``HUD_LLM_MODEL`` (default ``gpt-6-astra``)
-override the defaults. An episode succeeds when the peg seats before the 1000-tick
-(66.7 s) horizon.
+``TASK`` (default ``peg_round_8mm``), ``EPISODES`` (default 3; 0 runs only the scripted
+check), ``MAX_STEPS`` (tool calls per episode, default 100) and ``HUD_LLM_MODEL``
+(default ``gpt-6-astra``), ``HUD_REASONING_EFFORT`` (default ``medium``), ``EPISODE_TIMEOUT_S``
+(default 2700) and ``TRANSCRIPT_DIR`` (write each episode's calls and tool text there)
+override the defaults. An episode succeeds when the peg seats
+before the 1000-tick (66.7 s) horizon.
 """
 
 from __future__ import annotations
@@ -24,16 +32,20 @@ from hud.agents import create_agent
 from hud.agents.base import Agent
 from hud.eval import Task, Taskset
 from hud.eval.run import Run
-from hud.eval.runtime import ModalRuntime
+from hud.eval.runtime import ModalRuntime, Runtime
 from hud.eval.runtime.core import RuntimeConfig, RuntimeGPU, RuntimeLimits, RuntimeResources
 from hud.settings import settings
 
 IMAGE_NAME = "hud-assemble-bench-env"
 PORT = 8765
+RUNTIME = os.environ.get("RUNTIME", "modal")
 TASK = os.environ.get("TASK", "peg_round_8mm")
 EPISODES = int(os.environ.get("EPISODES", "3"))
 MAX_STEPS = int(os.environ.get("MAX_STEPS", "100"))
 MODEL = os.environ.get("HUD_LLM_MODEL", "gpt-6-astra")
+EFFORT = os.environ.get("HUD_REASONING_EFFORT", "medium")
+# Wall-clock cap on one episode. A hung tool call otherwise stalls the whole batch.
+EPISODE_TIMEOUT_S = float(os.environ.get("EPISODE_TIMEOUT_S", "2700"))
 
 # Keys the contract omits; none may appear in a tool result.
 PRIVILEGED_KEYS = ("policy/held_part_pose", "policy/fixed_part_pose", "policy/expert_active")
@@ -47,7 +59,11 @@ SYSTEM_PROMPT = (
 )
 
 
-def runtime() -> ModalRuntime:
+def runtime() -> Runtime | ModalRuntime:
+    if RUNTIME.startswith("tcp://"):
+        return Runtime(RUNTIME)
+    if RUNTIME != "modal":
+        raise ValueError(f"RUNTIME must be 'modal' or a tcp:// url, got {RUNTIME!r}")
     return ModalRuntime(
         IMAGE_NAME,
         command=("python", "-m", "hud.environment.server", "env.py", "--host", "0.0.0.0", "--port", str(PORT)),
@@ -85,6 +101,28 @@ class HoldGripper(Agent):
             raise RuntimeError(f"tool result labeled privileged keys: {leaked}")
 
 
+def dump_transcript(label: str, run) -> None:
+    """Write the agent's calls, replies and tool text (no images) to ``TRANSCRIPT_DIR``."""
+    out = os.environ.get("TRANSCRIPT_DIR")
+    if not out or not run.trace_id:
+        return
+    os.makedirs(out, exist_ok=True)
+    lines = []
+    for step in run.trace.steps:
+        if getattr(step, "reasoning", None):
+            lines.append(f"[{step.step_id}] reasoning: {step.reasoning}")
+        if getattr(step, "content", None):
+            lines.append(f"[{step.step_id}] {step.source}: {step.content}")
+        for call in getattr(step, "tool_calls", None) or []:
+            lines.append(f"[{step.step_id}] call {call.name} {call.arguments}")
+        result = getattr(step, "result", None)
+        if result is not None:
+            text = "\n".join(b.text for b in result.content if getattr(b, "text", None))
+            lines.append(f"[{step.step_id}] result: {text[:1200]}")
+    with open(os.path.join(out, f"{label}-{run.trace_id}.txt"), "w") as f:
+        f.write("\n".join(lines))
+
+
 def report(label: str, job) -> None:
     web = settings.hud_web_url.rstrip("/")
     print(f"[{label}] job={web}/jobs/{job.id}", flush=True)
@@ -94,6 +132,19 @@ def report(label: str, job) -> None:
             f"trace={web}/trace/{run.trace_id}",
             flush=True,
         )
+        steps = run.trace.steps
+        calls = sum(len(getattr(step, "tool_calls", None) or []) for step in steps)
+        print(
+            f"[{label}] status={run.trace.status} stop_reason={run.trace.stop_reason} "
+            f"steps={len(steps)} tool_calls={calls}",
+            flush=True,
+        )
+        for step in steps:
+            if step.error:
+                print(f"[{label}] step {step.step_id} error: {step.error[:400]}", flush=True)
+        dump_transcript(label, run)
+        if run.trace.content:
+            print(f"[{label}] final: {run.trace.content[:400]}", flush=True)
 
 
 async def main() -> None:
@@ -101,18 +152,37 @@ async def main() -> None:
     report("scripted", check)
     scripted = check.runs[0]
     # Pre-launch failures set the trace status without grade.is_error.
-    if scripted.trace.is_error or scripted.grade.is_error or EPISODES < 1:
+    if scripted.trace.is_error or scripted.grade.is_error:
         print("[llm] scripted check failed; skipping the agent", flush=True)
         return
+    if EPISODES < 1:
+        print("[llm] scripted check passed; EPISODES=0, skipping the agent", flush=True)
+        return
 
-    agent = create_agent(MODEL, system_prompt=SYSTEM_PROMPT, max_steps=MAX_STEPS, reasoning={"effort": "medium"})
-    job = await Taskset(f"{MODEL} x {TASK}", [task(seed) for seed in range(EPISODES)]).run(
-        agent, runtime=runtime(), max_concurrent=1
-    )
-    report("agent", job)
-    seated = sum(run.evaluation.get("success") is True for run in job.runs)
-    print(f"[agent] success={seated}/{len(job.runs)}", flush=True)
+    agent = create_agent(MODEL, system_prompt=SYSTEM_PROMPT, max_steps=MAX_STEPS, reasoning={"effort": EFFORT})
+    seated = 0
+    done = 0
+    for seed in range(EPISODES):
+        label = f"agent seed={seed}"
+        try:
+            job = await asyncio.wait_for(
+                Taskset(f"{MODEL} x {TASK} seed{seed}", [task(seed)]).run(agent, runtime=runtime(), max_concurrent=1),
+                EPISODE_TIMEOUT_S,
+            )
+        except TimeoutError:
+            print(f"[{label}] timed out after {EPISODE_TIMEOUT_S:g}s; counted as not seated", flush=True)
+            done += 1
+            continue
+        report(label, job)
+        done += 1
+        seated += sum(run.evaluation.get("success") is True for run in job.runs)
+        print(f"[agent] running total success={seated}/{done}", flush=True)
+    print(f"[agent] success={seated}/{done}", flush=True)
 
 
 if __name__ == "__main__":
+    if os.environ.get("VERBOSE"):
+        import logging
+
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
     asyncio.run(main())
