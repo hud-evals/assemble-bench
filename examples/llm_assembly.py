@@ -17,7 +17,9 @@ Then::
 
 ``TASK`` (default ``peg_round_8mm``), ``EPISODES`` (default 3; 0 runs only the scripted
 check), ``MAX_STEPS`` (tool calls per episode, default 100) and ``HUD_LLM_MODEL``
-(default ``gpt-6-astra``) override the defaults. An episode succeeds when the peg seats
+(default ``gpt-6-astra``), ``HUD_REASONING_EFFORT`` (default ``medium``), ``EPISODE_TIMEOUT_S``
+(default 2700) and ``TRANSCRIPT_DIR`` (write each episode's calls and tool text there)
+override the defaults. An episode succeeds when the peg seats
 before the 1000-tick (66.7 s) horizon.
 """
 
@@ -41,6 +43,7 @@ TASK = os.environ.get("TASK", "peg_round_8mm")
 EPISODES = int(os.environ.get("EPISODES", "3"))
 MAX_STEPS = int(os.environ.get("MAX_STEPS", "100"))
 MODEL = os.environ.get("HUD_LLM_MODEL", "gpt-6-astra")
+EFFORT = os.environ.get("HUD_REASONING_EFFORT", "medium")
 # Wall-clock cap on one episode. A hung tool call otherwise stalls the whole batch.
 EPISODE_TIMEOUT_S = float(os.environ.get("EPISODE_TIMEOUT_S", "2700"))
 
@@ -156,7 +159,7 @@ async def main() -> None:
         print("[llm] scripted check passed; EPISODES=0, skipping the agent", flush=True)
         return
 
-    agent = create_agent(MODEL, system_prompt=SYSTEM_PROMPT, max_steps=MAX_STEPS, reasoning={"effort": "medium"})
+    agent = create_agent(MODEL, system_prompt=SYSTEM_PROMPT, max_steps=MAX_STEPS, reasoning={"effort": EFFORT})
     seated = 0
     done = 0
     for seed in range(EPISODES):
