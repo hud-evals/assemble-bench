@@ -96,6 +96,28 @@ class HoldGripper(Agent):
             raise RuntimeError(f"tool result labeled privileged keys: {leaked}")
 
 
+def dump_transcript(label: str, run) -> None:
+    """Write the agent's calls, replies and tool text (no images) to ``TRANSCRIPT_DIR``."""
+    out = os.environ.get("TRANSCRIPT_DIR")
+    if not out or not run.trace_id:
+        return
+    os.makedirs(out, exist_ok=True)
+    lines = []
+    for step in run.trace.steps:
+        if getattr(step, "reasoning", None):
+            lines.append(f"[{step.step_id}] reasoning: {step.reasoning}")
+        if getattr(step, "content", None):
+            lines.append(f"[{step.step_id}] {step.source}: {step.content}")
+        for call in getattr(step, "tool_calls", None) or []:
+            lines.append(f"[{step.step_id}] call {call.name} {call.arguments}")
+        result = getattr(step, "result", None)
+        if result is not None:
+            text = "\n".join(b.text for b in result.content if getattr(b, "text", None))
+            lines.append(f"[{step.step_id}] result: {text[:1200]}")
+    with open(os.path.join(out, f"{label}-{run.trace_id}.txt"), "w") as f:
+        f.write("\n".join(lines))
+
+
 def report(label: str, job) -> None:
     web = settings.hud_web_url.rstrip("/")
     print(f"[{label}] job={web}/jobs/{job.id}", flush=True)
@@ -115,6 +137,7 @@ def report(label: str, job) -> None:
         for step in steps:
             if step.error:
                 print(f"[{label}] step {step.step_id} error: {step.error[:400]}", flush=True)
+        dump_transcript(label, run)
         if run.trace.content:
             print(f"[{label}] final: {run.trace.content[:400]}", flush=True)
 
