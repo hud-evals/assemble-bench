@@ -35,7 +35,8 @@ python -c "import json;[print(r['slug']) for r in json.load(open('tasks/vla/all.
 
 LLMs run the `assembly_direct` template through
 [`examples/llm_assembly.py`](../examples/llm_assembly.py), which takes a task id
-(`TASK=peg_round_8mm`) rather than a suite file.
+(`TASK=peg_round_8mm`) rather than a suite file. `HUD_ENV_URL=tcp://127.0.0.1:8765`
+attaches to a sim served on this machine. Leave it unset to use Modal.
 
 ## Regenerate from variants
 

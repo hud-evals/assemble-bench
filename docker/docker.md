@@ -63,6 +63,20 @@ python examples/run_eval.py --task peg_round_16mm --num-envs 4 \
 
 If you published a different host port, pass that in `--runtime`.
 
+## Astra on this container
+
+The container is the sim. The agent runs on the host and attaches to port 8765.
+Wait for `HUD_SERVE_PORT=8765`, set `HUD_API_KEY`, then one round-peg episode
+(`assembly_direct`). Versions, the variable names, and troubleshooting are in the
+README section **Local GPU**.
+
+```bash
+HUD_ENV_URL=tcp://127.0.0.1:8765 TASK=peg_round_8mm EPISODES=1 \
+  uv run --python 3.12 \
+  --with "hud @ git+https://github.com/hud-evals/hud-python.git@014a43f69b20b1addfc3b2647c9bd8d967be75e3" \
+  python examples/llm_assembly.py
+```
+
 ## Path A inside the container
 
 The image can also run the sim directly (README Path A) instead of serving. Everything
