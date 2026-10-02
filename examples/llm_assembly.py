@@ -41,6 +41,8 @@ TASK = os.environ.get("TASK", "peg_round_8mm")
 EPISODES = int(os.environ.get("EPISODES", "3"))
 MAX_STEPS = int(os.environ.get("MAX_STEPS", "100"))
 MODEL = os.environ.get("HUD_LLM_MODEL", "gpt-6-astra")
+# Wall-clock cap on one episode. A hung tool call otherwise stalls the whole batch.
+EPISODE_TIMEOUT_S = float(os.environ.get("EPISODE_TIMEOUT_S", "2700"))
 
 # Keys the contract omits; none may appear in a tool result.
 PRIVILEGED_KEYS = ("policy/held_part_pose", "policy/fixed_part_pose", "policy/expert_active")
@@ -155,12 +157,24 @@ async def main() -> None:
         return
 
     agent = create_agent(MODEL, system_prompt=SYSTEM_PROMPT, max_steps=MAX_STEPS, reasoning={"effort": "medium"})
-    job = await Taskset(f"{MODEL} x {TASK}", [task(seed) for seed in range(EPISODES)]).run(
-        agent, runtime=runtime(), max_concurrent=1
-    )
-    report("agent", job)
-    seated = sum(run.evaluation.get("success") is True for run in job.runs)
-    print(f"[agent] success={seated}/{len(job.runs)}", flush=True)
+    seated = 0
+    done = 0
+    for seed in range(EPISODES):
+        label = f"agent seed={seed}"
+        try:
+            job = await asyncio.wait_for(
+                Taskset(f"{MODEL} x {TASK} seed{seed}", [task(seed)]).run(agent, runtime=runtime(), max_concurrent=1),
+                EPISODE_TIMEOUT_S,
+            )
+        except TimeoutError:
+            print(f"[{label}] timed out after {EPISODE_TIMEOUT_S:g}s; counted as not seated", flush=True)
+            done += 1
+            continue
+        report(label, job)
+        done += 1
+        seated += sum(run.evaluation.get("success") is True for run in job.runs)
+        print(f"[agent] running total success={seated}/{done}", flush=True)
+    print(f"[agent] success={seated}/{done}", flush=True)
 
 
 if __name__ == "__main__":
