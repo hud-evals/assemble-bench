@@ -1,0 +1,101 @@
+"""Build the AssembleBench image on Modal and publish it by name.
+
+``nvcr.io/nvidia/isaac-sim`` returns 401 without an NGC login, so this image
+follows the README's host install: public ``isaacsim[all,extscache]==6.0.0.1``
+on a CUDA image, then ``docker/modal_image.sh``. The NGC Dockerfile is unchanged.
+
+    modal run docker/modal_deploy.py
+
+Then the LLM run (L40S; A100 and H100 cannot render)::
+
+    python examples/llm_assembly.py
+
+Requires ``MODAL_TOKEN_ID`` and ``MODAL_TOKEN_SECRET``.
+"""
+
+from __future__ import annotations
+
+import json
+import shlex
+from pathlib import Path
+
+import modal
+
+IMAGE_NAME = "hud-assemble-bench-env"
+APP_NAME = "hud-envs"
+PORT = 8765
+REPO_ROOT = Path(__file__).resolve().parents[1]
+ISAACSIM = "isaacsim[all,extscache]==6.0.0.1"
+
+# RTX-class. A100 / H100 cannot render Isaac Sim 6.
+GPU = "L40S"
+
+VULKAN_ICD = Path("/usr/share/vulkan/icd.d/nvidia_icd.json")
+EGL_VENDOR = Path("/usr/share/glvnd/egl_vendor.d/10_nvidia.json")
+_ICD = {
+    "file_format_version": "1.0.0",
+    "ICD": {"library_path": "libGLX_nvidia.so.0", "api_version": "1.3.0"},
+}
+_EGL = {"file_format_version": "1.0.0", "ICD": {"library_path": "libEGL_nvidia.so.0"}}
+
+_SKIP = {".git", "__pycache__", ".venv", "Isaac-GR00T"}
+
+
+def _ignore(path: Path) -> bool:
+    return any(part in _SKIP for part in path.parts)
+
+
+image = (
+    modal.Image.from_registry(
+        "nvidia/cuda:12.8.0-runtime-ubuntu22.04",
+        add_python="3.12",
+    )
+    .apt_install(
+        "git",
+        "cmake",
+        "build-essential",
+        "ffmpeg",
+        "libglu1-mesa",
+        "libgl1",
+        "libglib2.0-0",
+        "libvulkan1",
+    )
+    .pip_install(ISAACSIM, extra_index_url="https://pypi.nvidia.com")
+    .run_commands(
+        # Vulkan stack of the RoboLab/RoboDojo Modal images. Apt recommends
+        # install Mesa ICDs, which win over NVIDIA (Kit reports driver 0.00);
+        # without libegl1 vkCreateInstance returns ERROR_INCOMPATIBLE_DRIVER.
+        # libxt6: MaterialX's GL libs.
+        "apt-get update && apt-get install -y --no-install-recommends libegl1 libxt6",
+        "apt-get purge -y 'mesa-vulkan-drivers*' || true",
+        f"mkdir -p {VULKAN_ICD.parent} {EGL_VENDOR.parent}",
+        f"echo {shlex.quote(json.dumps(_ICD))} > {VULKAN_ICD}",
+        f"echo {shlex.quote(json.dumps(_EGL))} > {EGL_VENDOR}",
+        "rm -rf /var/lib/apt/lists/*",
+    )
+    .env(
+        {
+            "OMNI_KIT_ACCEPT_EULA": "YES",
+            "ACCEPT_EULA": "Y",
+            "PRIVACY_CONSENT": "Y",
+            "OMNI_KIT_ALLOW_ROOT": "1",
+            "NVIDIA_DRIVER_CAPABILITIES": "all",
+            "PYTHONUNBUFFERED": "1",
+            "VK_ICD_FILENAMES": str(VULKAN_ICD),
+            "__GLX_VENDOR_LIBRARY_NAME": "nvidia",
+        }
+    )
+    .add_local_dir(REPO_ROOT, remote_path="/opt/assemble-bench", copy=True, ignore=_ignore)
+    .run_commands("bash /opt/assemble-bench/docker/modal_image.sh")
+)
+
+app = modal.App(APP_NAME)
+
+
+@app.local_entrypoint()
+def main() -> None:
+    """Build the image and publish it under ``IMAGE_NAME``."""
+    sb_app = modal.App.lookup(APP_NAME, create_if_missing=True)
+    image.build(app=sb_app)
+    image.publish(IMAGE_NAME)
+    print(f"published image: {IMAGE_NAME}  ->  ModalRuntime({IMAGE_NAME!r}, gpu={GPU})")

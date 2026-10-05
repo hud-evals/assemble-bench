@@ -81,3 +81,13 @@ on [`hud-evals/AssembleBench`](https://huggingface.co/datasets/hud-evals/Assembl
 The CG-DAgger checkpoint was trained only on `peg_round_8mm` corrections, so the other
 round-peg sizes measure whether the recovery transfers. Base DROID checkpoints score 0%
 here without task finetuning – the writeup covers why.
+
+## One episode on Modal
+
+[`llm_assembly.py`](llm_assembly.py) calls `move_joints` once, then runs a short
+`gpt-6-astra` smoke on `assembly_direct` (`ModalRuntime`, L40S). Publish the image first; see [`docker/docker.md`](../docker/docker.md).
+
+```bash
+modal run docker/modal_deploy.py
+python examples/llm_assembly.py
+```

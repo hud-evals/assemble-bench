@@ -73,7 +73,8 @@ Path B also needs a separate **Python 3.12+** env (`lerobot==0.6.0` will not ins
 | Isaac Sim (Docker base) | `nvcr.io/nvidia/isaac-sim:6.0.0-dev2` | [`docker/Dockerfile`](docker/Dockerfile) |
 | Isaac Sim (host install) | pip `isaacsim[all,extscache]==6.0.0.1` | – |
 | Isaac Lab + Isaac Lab Arena | exact commits | git submodules |
-| `hud` | git `a08d8d83` ([#481](https://github.com/hud-evals/hud-python/pull/481)) | setup scripts, Dockerfile, [`requirements-agent.txt`](requirements-agent.txt) |
+| `hud` (env server) | git `014a43f6` (DirectControl; includes GymBridge from [#481](https://github.com/hud-evals/hud-python/pull/481)) | [`scripts/setup_sim.sh`](scripts/setup_sim.sh), [`docker/Dockerfile`](docker/Dockerfile), [`docker/modal_image.sh`](docker/modal_image.sh) |
+| `hud` (VLA agent freeze) | git `a08d8d83` | [`requirements-agent.txt`](requirements-agent.txt), [`requirements-agent.lock`](requirements-agent.lock) |
 | Agent env (torch `2.11.0`, lerobot `0.6.0`, …) | full freeze (Python 3.12) | [`requirements-agent.lock`](requirements-agent.lock) |
 
 ## Install
@@ -115,8 +116,8 @@ pip install -e submodules/IsaacLab-Arena "pin-pink==3.1.0" "rsl-rl-lib==5.0.1"
 
 # This bench + HUD serving stack for Path B:
 pip install -e assemble_bench
-# GymBridge/Shared from hud-python#481 (not on PyPI 0.6.x yet):
-pip install "hud @ git+https://github.com/hud-evals/hud-python.git@a08d8d83fe56c9427bcba53536c548410dedd330" msgpack
+# GymBridge + DirectControl (not on PyPI 0.6.x):
+pip install "hud @ git+https://github.com/hud-evals/hud-python.git@014a43f69b20b1addfc3b2647c9bd8d967be75e3" msgpack
 pip install --no-deps "av>=12" "openpi-client==0.1.2"
 ```
 
@@ -204,7 +205,28 @@ export HUD_API_KEY=sk-hud-...
 python examples/run_eval.py --task peg_round_16mm --num-envs 4
 ```
 
-> An LLM tool-use path (`agents/`, `tasks/agent/`) is **in development** and not ready yet.
+## LLM control
+
+An LLM drives the same sim through one MCP tool, `move_joints` (stock `DirectControl` on the
+joint contract, template `assembly_direct`):
+
+- `target` (required), `others`, and `note`: absolute joint targets in radians for
+  `panda_joint1..7` and `gripper.open_close` (0 open, 1 closed, above 0.5 closes). A call
+  steps until the arm reaches the targets or stops, then returns both cameras and the joint state.
+- The contract exposes no part poses or expert channels, so none can reach the model.
+- Horizon: 1000 control ticks (66.7 s at 15 Hz). Grading is the sim's `success` term (peg
+  seated), reported as `score` 1.0 or 0.0 with the episode result.
+
+```bash
+modal run docker/modal_deploy.py     # publish the image once
+HUD_API_KEY=... python examples/llm_assembly.py
+```
+
+`examples/llm_assembly.py` runs one scripted `move_joints` call first and starts the agent
+only if it passes. Task suites for the template are in [`tasks/llm/`](tasks/llm/pegs.json).
+
+**Known limitation:** on Modal (L40S, driver 580) Kit now finds the GPU through Vulkan, but
+Isaac Sim 6.0.0.1 PhysX GPU fails to create its scene (CUDA error 700), so no episode steps yet.
 
 ## Test your install
 

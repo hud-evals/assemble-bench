@@ -5,8 +5,8 @@ These JSON files are only *which rows to run* for ``hud eval``.
 
     python scripts/taskset.py
 
-Then run a VLA via ``examples/run_eval.py`` (see the repo README). The LLM tool
-path under ``tasks/agent/`` is in development.
+Then run a VLA via ``examples/run_eval.py`` or an LLM via ``examples/llm_assembly.py``
+(see the repo README).
 """
 
 from __future__ import annotations
@@ -50,26 +50,21 @@ def export_vla(*, seed: int = 0) -> None:
         _write(ROOT / "tasks" / "vla" / "debug.json", [_vla_row("debug", seed)])
 
 
-def export_agent(*, seed: int = 0) -> None:
-    """MCP template ``assembly_agent`` — EE tools; guided vs vision-only."""
-    # Peg smokes with both prompt modes (see env.py assembly_agent).
-    pegs = ("peg_round_8mm", "peg_round_4mm")
-    rows = []
-    for task in pegs:
-        if task not in VARIANTS:
-            continue
-        for guided, tag in ((True, "guided"), (False, "vision")):
-            rows.append(
-                {
-                    "env": ENV,
-                    "id": "assembly_agent",
-                    "slug": f"{task}_{tag}",
-                    "args": {"task": task, "seed": seed, "guided": guided},
-                }
-            )
-    _write(ROOT / "tasks" / "agent" / "pegs.json", rows)
+def export_llm(*, seed: int = 0) -> None:
+    """LLM template ``assembly_direct`` — ``move_joints`` on the peg variants."""
+    _write(ROOT / "tasks" / "llm" / "pegs.json",
+           [
+               {
+                   "env": ENV,
+                   "id": "assembly_direct",
+                   "slug": name,
+                   "args": {"task": name, "seed": seed},
+               }
+               for name in sorted(VARIANTS)
+               if name.startswith("peg_")
+           ])
 
 
 if __name__ == "__main__":
     export_vla()
-    export_agent()
+    export_llm()
