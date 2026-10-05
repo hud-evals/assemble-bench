@@ -7,7 +7,8 @@ returns both cameras and the joint state. Part poses are never returned.
 A scripted ``move_joints`` call checks the stack first and the agent only starts if
 it passes. ``RUNTIME`` picks where the env runs:
 
-- ``modal`` (default): publish the image once (``modal run docker/modal_deploy.py``).
+- ``modal`` (default): publish the image once (``modal run docker/modal_deploy.py``;
+  it pulls the NGC base with the Modal secret ``ngc-registry``).
 - ``tcp://127.0.0.1:8765``: attach to an env already served on a local GPU
   (see the README, "Run on a local GPU").
 
@@ -66,8 +67,8 @@ def runtime() -> Runtime | ModalRuntime:
         raise ValueError(f"RUNTIME must be 'modal' or a tcp:// url, got {RUNTIME!r}")
     return ModalRuntime(
         IMAGE_NAME,
-        command=("python", "-m", "hud.environment.server", "env.py", "--host", "0.0.0.0", "--port", str(PORT)),
-        workdir="/opt/assemble-bench",
+        command=("/isaac-sim/python.sh", "-m", "hud.environment.server", "env.py", "--host", "0.0.0.0", "--port", str(PORT)),
+        workdir="/app/assemble_bench",
         port=PORT,
         runtime_config=RuntimeConfig(
             resources=RuntimeResources(cpu=8, memory_mb=65536, gpu=RuntimeGPU(type="L40S", count=1)),
