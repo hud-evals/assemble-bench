@@ -225,15 +225,18 @@ HUD_API_KEY=... python examples/llm_assembly.py
 `examples/llm_assembly.py` runs one scripted `move_joints` call first and starts the agent
 only if it passes. Task suites for the template are in [`tasks/llm/`](tasks/llm/pegs.json).
 
-**Known limitation:** on Modal (L40S, driver 580) Kit now finds the GPU through Vulkan, but
-Isaac Sim 6.0.0.1 PhysX GPU fails to create its scene (CUDA error 700), so no episode steps yet.
-Use a local GPU instead (next section).
+**Known limitation:** on Modal (L40S, driver 580) no episode steps yet. Kit finds the GPU through
+Vulkan, but the first tiled-camera read (`reshape_tiled_image`) gets an empty annotator and dies with
+CUDA error 700; PhysX errors after that are fallout. This is not Modal or gVisor: the same recipe
+(`docker/Dockerfile.pip`, pip `isaacsim` 6.0.0.1 or 6.1.0.0) fails identically on a bare-metal
+RTX 6000 Ada with driver 580.126. The NGC base `nvcr.io/nvidia/isaac-sim:6.0.0-dev2` (Isaac Sim
+6.0.0-rc.22, Kit 110.0.0) works. Use a local GPU (next section) until the NGC image can reach Modal.
 
 ### Run on a local GPU
 
 The same `assembly_direct` episodes, served from a Docker container on your own machine and
-driven by `gpt-6-astra` over `tcp://127.0.0.1:8765`. No Modal. Not yet run end to end on
-bare metal; if the first episode fails, `docker logs assemble-bench` is the place to look.
+driven by `gpt-6-astra` over `tcp://127.0.0.1:8765`. No Modal. Run end to end on an RTX 6000 Ada
+(see the pull request for results); if an episode fails, `docker logs assemble-bench` is the place to look.
 
 **Prerequisites**
 
