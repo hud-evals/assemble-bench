@@ -51,8 +51,14 @@ COPY submodules/IsaacLab-Arena/isaaclab_arena_examples /workspace/isaaclab_arena
 COPY submodules/IsaacLab-Arena/isaaclab_arena_g1 /workspace/isaaclab_arena_g1
 COPY submodules/IsaacLab-Arena/isaaclab_arena_gr00t /workspace/isaaclab_arena_gr00t
 COPY submodules/IsaacLab-Arena/isaaclab_arena_openpi /workspace/isaaclab_arena_openpi
-RUN ${ISAAC_PY} -m pip install --no-cache-dir "pin-pink==3.1.0" \
-    && ${ISAAC_PY} -m pip install --no-cache-dir -e /workspace/
+# idna is shadow-installed (--ignore-installed) first: Arena's deps need a newer
+# idna than Kit's prebundle, and a normal upgrade uninstalls the prebundle copy,
+# which pip's own vendored idna symlinks into -> pip then dies with
+# "No module named 'pip._vendor.idna.core'" on the next RUN.
+RUN ${ISAAC_PY} -m pip install --no-cache-dir --ignore-installed idna \
+    && ${ISAAC_PY} -m pip install --no-cache-dir "pin-pink==3.1.0" \
+    && ${ISAAC_PY} -m pip install --no-cache-dir -e /workspace/ \
+    && ${ISAAC_PY} -m pip --version
 
 # The HUD SDK (`hud` on PyPI; formerly hud-python) from PyPI. Kit's python
 # dedupes shared packages as symlink farms across its extension prebundles, and

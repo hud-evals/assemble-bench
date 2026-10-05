@@ -1,0 +1,5 @@
+.git
+.venv-agent
+**/__pycache__
+results
+**/Isaac-GR00T

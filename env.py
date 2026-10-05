@@ -46,6 +46,12 @@ _JOINT_EMBODIMENT = "droid_abs_joint_pos_softmimic"
 # (600 ticks) unless a caller passes episode_length_s. ceil(s / step_dt) is 1001.
 _DIRECT_EPISODE_S = 1000 / 15
 
+# Cap on one move_joints call. Real moves finish in under ~10 s (a full-range joint
+# sweep at the default speed is 10 s); a call that cannot move anything, like closing
+# a gripper already stopped on a part, only ends at this cap. The stock 60 s cap would
+# spend nearly the whole 66.7 s episode on one such call.
+_MOVE_TIMEOUT_S = 12.0
+
 # Seconds a build, reset, or step may take before the watchdog kills the sim.
 _BUILD_BUDGET_S = 600.0
 _RESET_BUDGET_S = 300.0
@@ -126,6 +132,7 @@ sim = env.gym(
 DirectControl(
     notes=NOTES,
     max_step=GRIPPER_MAX_STEP,
+    timeout=_MOVE_TIMEOUT_S,
     reference=joint_reference,
 ).attach(sim)
 
