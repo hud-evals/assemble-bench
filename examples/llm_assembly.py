@@ -21,7 +21,8 @@ check), ``MAX_STEPS`` (tool calls per episode, default 100) and ``HUD_LLM_MODEL`
 (default ``gpt-6-astra``), ``HUD_REASONING_EFFORT`` (default ``medium``), ``EPISODE_TIMEOUT_S``
 (default 2700) and ``TRANSCRIPT_DIR`` (write each episode's calls and tool text there)
 override the defaults. An episode succeeds when the peg seats
-before the 1000-tick (66.7 s) horizon.
+before the 1000-tick (66.7 s) horizon. ``REWARD_MODE`` is ``sparse`` (default: reward 1
+on seating, else 0) or ``dense`` (partial credit below 1; see the README, "Reward modes").
 """
 
 from __future__ import annotations
@@ -47,6 +48,7 @@ MODEL = os.environ.get("HUD_LLM_MODEL", "gpt-6-astra")
 EFFORT = os.environ.get("HUD_REASONING_EFFORT", "medium")
 # Wall-clock cap on one episode. A hung tool call otherwise stalls the whole batch.
 EPISODE_TIMEOUT_S = float(os.environ.get("EPISODE_TIMEOUT_S", "2700"))
+REWARD_MODE = os.environ.get("REWARD_MODE", "sparse")
 
 # Keys the contract omits; none may appear in a tool result.
 PRIVILEGED_KEYS = ("policy/held_part_pose", "policy/fixed_part_pose", "policy/expert_active")
@@ -78,7 +80,7 @@ def runtime() -> Runtime | ModalRuntime:
 
 
 def task(seed: int) -> Task:
-    return Task(env="assembly-bench", id="assembly_direct", slug=f"{TASK}-seed{seed}", args={"task": TASK, "seed": seed})
+    return Task(env="assembly-bench", id="assembly_direct", slug=f"{TASK}-seed{seed}", args={"task": TASK, "seed": seed, "reward_mode": REWARD_MODE})
 
 
 class HoldGripper(Agent):

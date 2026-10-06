@@ -25,20 +25,18 @@ from isaaclab.managers import ManagerTermBase, RewardTermCfg, SceneEntityCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.math import quat_apply
 
+from assemble_bench.environments.assembly.scoring import (
+    W_ALIGN_PC,
+    W_DEPTH_PC,
+    W_ENGAGE,
+    W_GRASP_PC,
+    W_LIFT,
+    W_SUCCESS,
+    W_THREAD_PC,
+    W_THREAD_START,
+)
 from assemble_bench.environments.assembly.tasks import part_seated, peg_upright_cos
 from assemble_bench.environments.assembly.variants import TABLE_TOP_Z, AssemblyVariant
-
-# Once-fired milestones.
-W_LIFT = 0.5
-W_ENGAGE = 0.4
-W_THREAD_START = 1.5   # nut: first meaningful turn on the bolt
-W_SUCCESS = 2.0
-
-# Continuous new-best potentials (total contribution capped by weight * 1.0).
-W_GRASP_PC = 0.2
-W_ALIGN_PC = 0.3
-W_DEPTH_PC = 0.5
-W_THREAD_PC = 0.8
 
 # Grasp approach (flange EE -> held). Falloff radius for Φ_grasp.
 GRASP_Z_OFF = 0.16
