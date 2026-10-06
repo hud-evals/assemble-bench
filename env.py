@@ -26,6 +26,8 @@ import sys
 from pathlib import Path
 
 from direct_control import GRIPPER_MAX_STEP, NOTES, joint_reference
+from assemble_bench.environments.assembly.scoring import dense_score
+from assemble_bench.environments.assembly.variants import VARIANTS
 from assemble_bench.environments.assembly.watchdog import GuardedEnv, Watchdog
 from hud import Environment
 from hud.environment.robot import DirectControl
@@ -51,6 +53,8 @@ _DIRECT_EPISODE_S = 1000 / 15
 # a gripper already stopped on a part, only ends at this cap. The stock 60 s cap would
 # spend nearly the whole 66.7 s episode on one such call.
 _MOVE_TIMEOUT_S = 12.0
+
+REWARD_MODES = ("sparse", "dense")
 
 # Seconds a build, reset, or step may take before the watchdog kills the sim.
 _BUILD_BUDGET_S = 600.0
@@ -167,21 +171,30 @@ async def assembly(
 
 
 @env.template(id="assembly_direct")
-async def assembly_direct(task: str = _DEFAULT_TASK, seed: int = 0):
+async def assembly_direct(task: str = _DEFAULT_TASK, seed: int = 0, reward_mode: str = "sparse"):
     """One assembly episode for an LLM (``move_joints`` on the sole slot).
 
     The reset claim is what the motion tool binds. Yielding a robot token
     would hand that slot to a policy client. The horizon is ~1000 control
     steps; the VLA ``assembly`` template keeps the variant default (pegs 40 s).
+
+    ``reward_mode``: ``sparse`` scores 1 on seating and 0 otherwise; ``dense`` scores
+    partial progress in [0, 1) and 1 on seating (``scoring.dense_score``).
     """
+    if reward_mode not in REWARD_MODES:
+        raise ValueError(f"reward_mode must be one of {REWARD_MODES}, got {reward_mode!r}")
+    dense = reward_mode == "dense"
     ep = await sim.reset(
         task=task,
         seed=seed,
         num_envs=1,
         embodiment=_JOINT_EMBODIMENT,
-        reward="none",
+        reward="staged" if dense else "none",
         expert_takeover=False,
         episode_length_s=_DIRECT_EPISODE_S,
     )
     yield {"prompt": ep["prompt"]}
-    yield await sim.result()
+    result = await sim.result()
+    if dense:
+        result["score"] = dense_score(VARIANTS[task].family, result["success"], result["total_reward"])
+    yield result

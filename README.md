@@ -347,6 +347,35 @@ Add an entry to `VARIANTS` in
 geometry), then run `python scripts/taskset.py` to refresh the HUD run lists. See
 [`tasks/README.md`](tasks/README.md).
 
+### Reward modes
+
+The HUD `assembly_direct` task (the LLM `move_joints` surface) takes `reward_mode`
+(`examples/llm_assembly.py` reads it from `REWARD_MODE`):
+
+| `reward_mode` | Reward |
+|---|---|
+| `sparse` (default) | 1 when the part seats and holds, else 0 |
+| `dense` | 1 on success; otherwise partial credit in [0, 0.9] |
+
+`dense` runs the `staged` reward below (`--reward staged`) and scores the episode as
+`0.9 * banked / maximum`, where `banked` is the staged reward accumulated over the
+episode (it never decreases) and `maximum` is the most a failed episode can bank. Only
+success scores 1.0, so a part that seats but is not held to the success check tops out
+at 0.9. Weights (in [`scoring.py`](assemble_bench/environments/assembly/scoring.py)):
+
+| Term | Weight | Paid when |
+|---|---|---|
+| Grasp approach | 0.2 | gripper closes in on the part, before lift (new best only) |
+| Lift | 0.5 | part is lifted clear of its stand |
+| Align | 0.3 | part xy closes on the seat, after lift (new best only) |
+| Depth | 0.5 | part descends toward the seat, after lift (new best only) |
+| Engage | 0.4 | part is aligned and within the engage gap, upright |
+| Thread start (nuts) | 1.5 | first meaningful turn on the bolt |
+| Thread (nuts) | 0.8 | cumulative on-bolt turns, up to 1.5 turns (new best only) |
+
+`maximum` is 1.9 for pegs and gears and 4.2 for nuts. The success reward (2.0) is not in
+the score: success is 1.0 outright.
+
 ### Dense rewards for RL
 
 Eval uses sparse success (`--reward none`). For training, `--reward staged` gives

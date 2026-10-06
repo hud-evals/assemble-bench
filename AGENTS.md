@@ -35,6 +35,9 @@ uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e assem
 cd scripts && ../.venv/bin/python taskset.py
 ```
 
+`scoring.py` (reward weights and the dense episode score) is Isaac-free too; its unit
+tests run with `.venv/bin/python -m pytest tests` (install `pytest` into the venv).
+
 The other modules in `assemble_bench/environments/assembly/` import `isaaclab*` and
 `isaaclab_arena*`, which exist only in the GPU image or a host Isaac install. Importing
 them elsewhere raises `ModuleNotFoundError`.
